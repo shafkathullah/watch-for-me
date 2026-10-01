@@ -73,7 +73,7 @@ Modes combine: `--tldr --quotes`, `--steps --ask "..."`. Up to 10 links per call
 1. **Download**: [yt-dlp](https://github.com/yt-dlp/yt-dlp) fetches audio and a 720p video stream in parallel (original-language audio, never an auto-dub). A 1 hour talk is about 50 MB.
 2. **Transcribe on your device**: English goes to NVIDIA Parakeet TDT 0.6B v3, other languages to Whisper large-v3-turbo, chosen per minute of audio by a small language detector. Apple Silicon runs on the GPU through MLX (about 40x real time for English, about 20x for mixed languages); other machines use a CPU build (about 7 to 19x on an M1 Pro).
 3. **Keyframes**: ffmpeg scene detection plus perceptual-hash dedupe keeps one frame per slide, scene or code change (a 1 hour slide talk: 523 candidates down to 73 frames, ready about 23 s after you ask), tiled into labelled contact sheets.
-4. **Your agent reads**: subagents read the sheets in parallel while transcription is still running, zoom into full-resolution frames for small text and code, and the main agent merges everything into one timeline. Long transcripts are digested by subagents too, so a 1 hour video costs the main conversation about 25k tokens.
+4. **Your agent reads**: subagents read the sheets in parallel while transcription is still running, zoom into full-resolution frames for small text and code, and the main agent merges everything into one timeline. Long transcripts are digested and merged by subagents too, so a 1 hour talk costs the main conversation about 13k tokens on top of the agent's own baseline (2 hours: about 18k).
 
 Everything is cached per video: asking a second question about the same video starts in under a second.
 
@@ -132,7 +132,7 @@ Models live in the Hugging Face cache (`~/.cache/huggingface/hub`, or `$HF_HOME`
 
 **Does it see motion?** watch-for-me sees keyframes, not motion. It catches every slide, scene change and line of code on screen, but it won't judge a golf swing.
 
-**How many tokens does it use?** Visuals cost about 200 tokens per minute for a slide talk and about 3,000 per minute for fast-cut videos, and most of that is spent in subagents, not your main conversation. A transcript is about 13k tokens per hour of speech. Default mode keeps a 1 hour talk at about 25k tokens in the main conversation.
+**How many tokens does it use?** Visuals cost about 200 tokens per minute for a slide talk and about 3,000 per minute for fast-cut videos, and most of that is spent in subagents, not your main conversation. A transcript is about 13k tokens per hour of speech. Long transcripts are digested by subagents, so a 1 hour talk costs the main conversation about 13k tokens (2 hours: about 18k).
 
 **Instagram (or another site) says login required.** Add `--cookies chrome` (or your browser). Chrome on macOS asks for Keychain access; Safari needs Full Disk Access for your terminal.
 

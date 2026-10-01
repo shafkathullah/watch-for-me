@@ -69,6 +69,7 @@ from .types import (
     EXIT_ALL_FAILED,
     EXIT_INTERRUPTED,
     EXIT_OK,
+    EXIT_PARTIAL,
     EXIT_PREREQ,
     EXIT_USAGE,
     EXIT_WAIT_DEAD,
@@ -129,8 +130,9 @@ def build_parser() -> argparse.ArgumentParser:
         [--fresh] [--jobs-net N] [--jobs-cpu N] [--quiet]
     wait --run ID --until frames|done [--timeout 540]
     visual-put KEY --view VTAG --flags F [--from PATH]   (body on stdin, or from PATH)
+    visual-put --run ID --flags F                        (every key's V parts of that run)
     frame KEY --t SECONDS [--crop X,Y,W,H] [--width 1456]
-    doctor [--json] [--quick]
+    doctor [--json] [--quick] [--brief]
     setup
     cache list | cache path [KEY] | cache clear (KEY | --all)
     cancel --run ID
@@ -169,9 +171,11 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--until", required=True, choices=("frames", "done"))
     w.add_argument("--timeout", type=float, default=float(DEFAULT_WAIT_TIMEOUT_S))
 
-    v = sub.add_parser("visual-put", help="store the merged visual timeline (stdin or --from)")
-    v.add_argument("key")
-    v.add_argument("--view", required=True, help="view tag (last part of view_dir)")
+    v = sub.add_parser("visual-put", help="store the visual timeline (stdin, --from, or --run)")
+    v.add_argument("key", nargs="?")
+    v.add_argument("--view", help="view tag (last part of view_dir)")
+    v.add_argument("--run", metavar="ID",
+                   help="store each video's V reader outputs of this run (runs/<id>/parts) as its visual.md")
     v.add_argument("--flags", default="", help="used subset of code,ask,steps, or none")
     v.add_argument("--from", dest="from_path", metavar="PATH",
                    help="read the timeline from this file instead of stdin (deleted after, when it "
@@ -188,6 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
     d = sub.add_parser("doctor", help="check prerequisites and cached models")
     d.add_argument("--json", action="store_true")
     d.add_argument("--quick", action="store_true")
+    d.add_argument("--brief", action="store_true", help="one compact JSON line: failures and missing models only")
 
     sub.add_parser("setup", help="prefetch this backend's speech models")
 
@@ -516,6 +521,7 @@ class _Run:
             entries = self.plan_entries()
             p = plan.build_plan(self.opts.run_id, "frames", self.opts.code, entries)
             p["light_sheets"] = _light_sheets(entries)
+            plan.write_tasks(self.rdir, p, watch_py_path())
             plan.write_plan(self.rdir, p)
             self.progress.event(None, "frames", "done", videos=len(self.videos()),
                                 batches=len(p["visual_batches"]), inline=len(p["inline_sheets"]))
@@ -530,8 +536,8 @@ class _Run:
             fj = e.get("frames_json")
             if fj is None and v.frames_json:
                 fj = cache.read_json(v.frames_json)
-            out.append({"key": v.key, "view_dir": v.view_dir, "frames_json": fj,
-                        "words": e.get("words"), "windows": e.get("windows") or []})
+            out.append({"key": v.key, "view_dir": v.view_dir, "frames_json": fj, "words": e.get("words"),
+                        "tokens": e.get("tokens"), "windows": e.get("windows") or []})
         return out
 
 
@@ -669,17 +675,24 @@ def _on_model(progress: Progress, ev: dict[str, Any]) -> None:
 
 
 def _light_sheets(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Q8 light visuals (--tldr): per video, abs paths of frames.json `light_sheets`."""
-    return [{"key": e["key"], "sheets": [str(Path(e["view_dir"]) / s["file"]) for s in
-                                         (e["frames_json"] or {}).get("light_sheets") or []]}
-            for e in entries if (e.get("frames_json") or {}).get("light_sheets")]
+    """Q8 light visuals (--tldr): per video, abs paths of frames.json `light_sheets`; a video
+    whose frames.json has none (older cache) gets its first and middle sheet instead."""
+    out = []
+    for e in entries:
+        fj = e.get("frames_json") or {}
+        files = [s["file"] for s in fj.get("light_sheets") or []]
+        if not files:
+            sh = [s["file"] for s in fj.get("sheets") or []]
+            files = list(dict.fromkeys([sh[0], sh[len(sh) // 2]])) if sh else []
+        if files:
+            out.append({"key": e["key"], "sheets": [str(Path(e["view_dir"]) / f) for f in files]})
+    return out
 
 
 def _finalize_run(rs: _Run) -> dict[str, Any]:
     """Windows (windowed mode only), final plan.json, `WFM - context done`."""
     entries = rs.plan_entries()
-    total_words = sum(int(e.get("words") or 0) for e in entries)
-    mode = plan.choose_mode(plan.transcript_tokens_est(total_words))
+    mode = plan.choose_mode(sum(int(e.get("tokens") or 0) for e in entries))
     if mode == "windowed":
         for v in rs.videos():
             fin = rs.finals.get(id(v))
@@ -689,6 +702,7 @@ def _finalize_run(rs: _Run) -> dict[str, Any]:
         entries = rs.plan_entries()
     p = plan.build_plan(rs.opts.run_id, "done", rs.opts.code, entries)
     p["light_sheets"] = _light_sheets(entries)
+    plan.write_tasks(rs.rdir, p, watch_py_path())
     plan.write_plan(rs.rdir, p)
     rs.progress.event(None, "context", "done", mode=p["mode"], tokens=p["transcript_tokens_est"],
                       batches=len(p["visual_batches"]), windows=len(p["transcript_windows"]))
@@ -1172,9 +1186,12 @@ class _VideoJob:
         run never rewrites the markers a 720p session is reading) + context.md; status done."""
         v = self.v
         markers = plan.markers_from_frames(self.frames_json) if self.frames_json else None
+        tokens = 0
         if self.transcript is not None:
-            v.transcript_md = str(plan.write_transcript_md(self.kp, self.rtag, self.transcript, markers,
-                                                           self.view if markers else None))
+            tpath = plan.write_transcript_md(self.kp, self.rtag, self.transcript, markers,
+                                             self.view if markers else None)
+            v.transcript_md = str(tpath)
+            tokens = plan.estimate_read_tokens(tpath.read_text(encoding="utf-8"))
         paths = {"transcript": v.transcript_md, "frames_json": v.frames_json,
                  "sheets_dir": str(self.view.sheets_dir) if v.sheets else None}
         text = plan.render_context_md(self.meta, self.vtag, self.transcript, self.frames_json, paths)
@@ -1182,7 +1199,8 @@ class _VideoJob:
         v.status = "done"
         if self.run is not None:
             self.run.finals[id(v)] = {
-                "frames_json": self.frames_json, "words": _words(self.transcript), "windows": [],
+                "frames_json": self.frames_json, "words": _words(self.transcript), "tokens": tokens,
+                "windows": [],
                 "transcript": self.transcript, "markers": markers, "meta": self.meta, "rtag": self.rtag,
                 "vtag": self.vtag, "from_s": self.opts.from_s, "to_s": self.opts.to_s,
             }
@@ -1201,6 +1219,10 @@ def _render_sheets(out: Any, view_dir: Path, hires: bool, chapters: Any) -> tupl
 # --------------------------------------------------------------------------
 # wait / cancel
 # --------------------------------------------------------------------------
+WAIT_VIDEO_FIELDS = ("input", "key", "status", "error", "warnings", "title", "uploader", "duration",
+                     "view_dir", "context_md", "transcript_md", "visual_md", "visual_cached")
+
+
 def cmd_wait(args: argparse.Namespace) -> int:
     """Poll runs/<id>/run.json every WAIT_POLL_S until:
       --until frames: run.json frames_reached, or state != "running"
@@ -1208,14 +1230,16 @@ def cmd_wait(args: argparse.Namespace) -> int:
     Exit 0 when reached (regardless of per-video failures), 6 on --timeout with the pid
     alive, 7 when the pid is dead and not reached (state set to "crashed"; later waits on a
     crashed run exit 7 too), 130 when the run was cancelled / interrupted before the stage,
-    2 for an unknown run id. "Alive" is pid-reuse safe (cache.run_pid_alive). Prints ONE line:
+    2 for an unknown run id. "Alive" is pid-reuse safe (cache.run_pid_alive). Prints ONE line,
+    compact because the agent reads it every round (the full plan + result of a 2 h video was
+    ~19k chars per wait):
     WFM_WAIT {"v":1,"run_id","until","reached":bool,"exit":<this exit>,"alive":bool,
       "state","run_exit":int|null,"elapsed_s":<since run start>,
-      "plan":<plan.json dict or null>,
-      "videos":[VideoResult dict + "last":<last WFM line for its key or null>],
-      "last_run_line":<last "-" line or null>, "log":<abs runs/<id>/log>,
-      "result":<final WFM_RESULT dict when the run finished, else null>}
-    Last lines come from progress.last_lines_by_key(runs/<id>/log).
+      "plan":<plan.compact_plan(plan.json) or null>, "plan_path":<abs plan.json or null>,
+      "videos":[WAIT_VIDEO_FIELDS of the VideoResult + "last":<last WFM line for its key or null>],
+      "last_run_line":<last "-" line or null>, "log":<abs runs/<id>/log>}
+    Last lines come from progress.last_lines_by_key(runs/<id>/log). The full plan.json and the
+    final WFM_RESULT (run.json "result") stay on disk.
     """
     rid = args.run
     if not cache.valid_run_id(rid):
@@ -1256,13 +1280,16 @@ def cmd_wait(args: argparse.Namespace) -> int:
     log = rdir / "log"
     last = last_lines_by_key(log)
     started = rj.get("started_ts")
-    videos = [dict(v, last=last.get(v.get("key") or "")) for v in rj.get("videos") or []]
+    videos = [dict({k: v.get(k) for k in WAIT_VIDEO_FIELDS}, last=last.get(v.get("key") or ""))
+              for v in rj.get("videos") or []]
+    plan_file = rdir / "plan.json"
     obj = {
         "v": 1, "run_id": rid, "until": args.until, "reached": code == EXIT_OK, "exit": code,
         "alive": _run_alive(rj), "state": rj.get("state"), "run_exit": rj.get("exit"),
         "elapsed_s": round(time.time() - started, 2) if isinstance(started, (int, float)) else None,
-        "plan": cache.read_json(rdir / "plan.json"), "videos": videos, "last_run_line": last.get("-"),
-        "log": str(log), "result": rj.get("result"),
+        "plan": plan.compact_plan(cache.read_json(plan_file)),
+        "plan_path": str(plan_file) if plan_file.exists() else None,
+        "videos": videos, "last_run_line": last.get("-"), "log": str(log),
     }
     print(format_json_line(TAG_WAIT, obj), flush=True)
     return code
@@ -1375,7 +1402,13 @@ def cmd_visual_put(args: argparse.Namespace) -> int:
     quotes) trips Claude Code's shell-obfuscation check and needs approval on every --code
     run; the agent writes the draft with its Write tool instead. A --from file inside the
     key's cache dir is deleted after a successful store. Exit 2 for unknown key/view,
-    missing/oversized file or an empty body."""
+    missing/oversized file or an empty body. `--run ID`: see _visual_put_run."""
+    if args.run:
+        if args.key or args.view or args.from_path:
+            raise UsageError("visual-put: --run takes no KEY, --view or --from")
+        return _visual_put_run(args.run, args.flags)
+    if not args.key or not args.view:
+        raise UsageError("visual-put: needs KEY --view VTAG, or --run ID")
     kp = _key_or_usage(args.key, "visual-put")
     if not _VTAG_RE.match(args.view):
         raise UsageError(f"visual-put: invalid view {args.view!r}")
@@ -1401,6 +1434,43 @@ def cmd_visual_put(args: argparse.Namespace) -> int:
         src.unlink(missing_ok=True)
     print(path, flush=True)
     return EXIT_OK
+
+
+def _visual_put_run(rid: str, flags: str) -> int:
+    """`visual-put --run ID --flags F`: per video with V batches in runs/<id>/plan.json, join
+    its V parts (runs/<id>/parts/<key>.<Vnn>.md, written by the V readers with their Write
+    tool) in time order and store them as that view's visual.md, so the readers' text never
+    passes through the main agent's context twice. One line per video: the visual.md path, or
+    `missing <key> <name> <part path>...` (that video is not stored; re-run its readers).
+    `nothing to store` when the plan has no batches. Exit 0, 4 when any video had missing
+    parts, 2 for an unknown run / no plan."""
+    if not cache.valid_run_id(rid):
+        raise UsageError("visual-put: invalid run id")
+    rdir = cache.cache_root() / cache.RUNS_DIR / rid
+    p = cache.read_json(rdir / "plan.json")
+    if not p:
+        _err(f"visual-put: no plan for run {rid}")
+        return EXIT_USAGE
+    done = plan.assemble_visual(rdir, p)
+    if not done:
+        print("nothing to store", flush=True)
+        return EXIT_OK
+    code = EXIT_OK
+    for key, (view_dir, body, missing) in done.items():
+        if missing:
+            paths = " ".join(f"{n} {rdir / plan.PARTS_DIR / (n + '.md')}" for n in missing)
+            print(f"missing {key} {paths}", flush=True)
+            code = EXIT_PARTIAL
+            continue
+        view = cache.ViewPaths(Path(view_dir), Path(view_dir).name)
+        try:
+            path = plan.write_visual_md(view, key, flags, body, VERSION)
+        except FileNotFoundError:
+            print(f"missing {key} view {view_dir}", flush=True)
+            code = EXIT_PARTIAL
+            continue
+        print(path, flush=True)
+    return code
 
 
 def parse_crop(text: str) -> tuple[int, int, int, int]:
@@ -1449,14 +1519,16 @@ def cmd_frame(args: argparse.Namespace) -> int:
 # doctor / setup / cache
 # --------------------------------------------------------------------------
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """doctor.run_checks(quick) -> JSON (one line) or table on stdout; exit report.exit_code."""
+    """doctor.run_checks(quick) -> JSON (one line; --brief: doctor.to_brief) or table on stdout;
+    exit report.exit_code."""
     import json
 
     from . import doctor
 
     report = doctor.run_checks(quick=args.quick)
-    if args.json:
-        print(json.dumps(doctor.to_json(report), ensure_ascii=False, separators=(",", ":")), flush=True)
+    if args.json or args.brief:
+        obj = doctor.to_brief(report) if args.brief else doctor.to_json(report)
+        print(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), flush=True)
     else:
         print(doctor.render_table(report), flush=True)
     return report.exit_code

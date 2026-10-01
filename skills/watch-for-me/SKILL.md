@@ -67,18 +67,18 @@ Up to 10 links at once. Speech is transcribed on this device.
 
 ## 3. Preflight (first use in a session only)
 
-`W doctor --quick --json`
-- Exit 3: show the `hint` of every failed blocking check (for example `brew install ffmpeg`, `curl -LsSf https://astral.sh/uv/install.sh | sh`) and stop.
-- A `models[]` entry with role `parakeet` or `lid` has `cached: false`: tell the user once, "First run downloads ~3 GB (speech models + runtime), ~5 GB if the video isn't in English; later runs start in seconds."
+`W doctor --quick --brief`
+- Exit 3: show the `hint` of every `failed` entry with `blocking: true` (for example `brew install ffmpeg`, `curl -LsSf https://astral.sh/uv/install.sh | sh`) and stop.
+- `models_missing` contains `parakeet` or `lid`: tell the user once, "First run downloads ~3 GB (speech models + runtime), ~5 GB if the video isn't in English; later runs start in seconds."
 
 ## 4. Start the run
 
 1. `W run --detach '<input>'... <cli flags>`: prints `WFM_STARTED {"run_id":…,"pid":…}` in under a second. `RUN` = that `run_id`. Never make up a run id.
-2. `W wait --run RUN --until frames --timeout 540` with Bash `timeout: 600000`. It prints one `WFM_WAIT {json}` line. With `--save`, put that procedure's tool lookup (its step 1) in this same message as a second tool call, and write no text in the message.
+2. `W wait --run RUN --until frames --timeout 540` with Bash `timeout: 600000`. It prints one `WFM_WAIT {json}` line: the run's state, `videos[]` (title, duration, file paths, `last` WFM line) and a compact `plan` (task names, the few sheets you read yourself). Never Read `plan_path`: everything you need is in `WFM_WAIT`. With `--save`, put that procedure's tool lookup (its step 1) in this same message as a second tool call, and write no text in the message.
    - Exit 0: continue.
    - Exit 6 (still running): give the user one short line from the newest WFM lines (`videos[].last`, `last_run_line`), e.g. "Downloading speech model, 2.5 GB", then wait again. Keep waiting while new WFM lines appear.
    - Exit 7 (the run died), or exit 6 three rounds in a row with no new WFM line: go to step 9. Exit 130: the run was cancelled; say so and stop.
-3. If `--detach` fails (non-zero exit, no `WFM_STARTED`): run the same command without `--detach` in the host's background shell (Claude Code: `run_in_background: true`) and wait as above. No background shell: run it in the foreground (Bash timeout 600000) and take everything from its `WFM_RESULT` line (no early visuals).
+3. If `--detach` fails (non-zero exit, no `WFM_STARTED`): run the same command without `--detach` in the host's background shell (Claude Code: `run_in_background: true`) and wait as above. No background shell: run it in the foreground (Bash timeout 600000; no early visuals), then continue with the `run_id` of its `WFM_RESULT` line (the waits return at once).
 4. Once titles and durations are known, one line to the user: `Watching N video(s), <total duration>. Transcript ready in ~<total seconds/40 + 15> s.` If `--save` was passed, continue its procedure now, in parallel, silently: its only output is its one line at the end of the answer. No progress note about it, not even "Not connected.".
 
 ## 5. Visuals
@@ -86,39 +86,39 @@ Up to 10 links at once. Speech is transcribed on this device.
 Per video, pick one level:
 - **None**: `--quotes` alone, `--audio-only`, or the video has no frames (`no_video`, frames error).
 - **Reuse**: `visual_cached: true`. Read `visual_md`. Its first line holds `flags=`. Reuse it as is when this run has no `--code`/`--ask`/`--steps`, or the same flags. Otherwise read it, then re-read only the sheets whose tiles matter for the new request (use `frame` for detail). No fan-out for that video.
-- **Light** (`--tldr`, optionally with `--quotes`, and no other mode or `--ask`): no subagents, at most 2 images per video, read by you after step 6's wait. Use the video's entry in `plan.light_sheets` (chapter-start and most-novel tiles). No entry: the first and the middle sheet of `videos[].sheets` (1 sheet: just that one).
+- **Light** (`--tldr`, optionally with `--quotes`, and no other mode or `--ask`): no subagents, at most 2 images per video, read by you after step 6's wait: the video's `plan.light_sheets` entry (chapter-start and most-novel tiles).
 - **Full** (every other case): below.
 
 Full fan-out, from `plan` in `WFM_WAIT`:
-1. For every `plan.visual_batches` entry spawn one V subagent, **all in a single message** so they run in parallel; at most 12 per message, further waves after. Subagents use your model. Always pass `run_in_background: false`: a backgrounded subagent ends your turn, and the rest of the run (`visual-put`, `--code` writes) then loses this skill's tool permissions. The CLI keeps transcribing while they run.
-2. Each V prompt = the full text of `references/visual-reader.md`, then:
+1. For every name in `plan.v_tasks` spawn one V subagent, **all in a single message** so they run in parallel; at most 12 per message, further waves after. Subagents use your model. Always pass `run_in_background: false`: a backgrounded subagent ends your turn, and the rest of the run (`visual-put`, `--code` writes) then loses this skill's tool permissions. The CLI keeps transcribing while they run.
+2. Each prompt is exactly these lines. The subagent reads its instructions and task file itself: never paste them, never Read them yourself.
    ```
-   BATCH: <that visual_batches entry as JSON>
+   Read '<SKILL_DIR>/references/visual-reader.md' and follow it.
+   TASK: <plan.tasks_dir>/<name>.json
    MODES: <the mode flags, or "default">
-   CODE: <plan.code>
    QUESTION: <the --ask text, or "none">
-   FRAME: uv run --script '<SKILL_DIR>/scripts/watch.py' frame '<KEY>' --t <SECONDS>
    ```
-3. Meanwhile read the `plan.inline_sheets` yourself (videos with 1 or 2 sheets).
+3. Each V reader writes its output to a file and replies `stored <id>`. Meanwhile read the `plan.inline_sheets` yourself (videos with 1 or 2 sheets).
 
 Sheets: each tile is labelled `#n mm:ss-mm:ss`. Tile numbers match the `-- #n mm:ss --` marker lines in the transcript.
 
 ## 6. Transcript
 
-`W wait --run RUN --until done --timeout 540`, same re-wait rules. The final `result` holds every video. Then:
-- Read each video's `context_md` (small: title, source, chapters, description, file paths).
-- `plan.mode` = `visual`: read each `transcript_md` yourself.
-- `plan.mode` = `windowed`: never read full transcripts. Spawn one T subagent per `plan.transcript_windows` entry (same single-message, 12-per-wave, `run_in_background: false` rule). Prompt = full text of `references/transcript-digest.md`, then `WINDOW: <entry JSON>`, `MODES: …`, `QUESTION: …`.
-- If `--save` was passed and its procedure has not run yet, run it now, in parallel.
-
-## 7. Merge and store
-
-1. Per video, merge V/T outputs and transcript into one timeline by tile number and timestamp.
-2. If this video had a full fan-out, store the V outputs verbatim, concatenated in time order, so the next run can reuse them. `VTAG` = last path part of `view_dir`; `FLAGS` = the used subset of `code,ask,steps` comma-joined, or `none`. Write the V outputs with the Write tool to `<view_dir>/visual.draft.md`, then:
+1. In one message: `W wait --run RUN --until done --timeout 540` (same re-wait rules) and, if V readers ran, the store call below. It saves each video's V outputs as its `visual.md`, so the next run can reuse them (`FLAGS` = the used subset of `code,ask,steps` comma-joined, or `none`):
    ```
-   uv run --script '<SKILL_DIR>/scripts/watch.py' visual-put '<KEY>' --view '<VTAG>' --flags '<FLAGS>' --from '<view_dir>/visual.draft.md'
+   uv run --script '<SKILL_DIR>/scripts/watch.py' visual-put --run 'RUN' --flags 'FLAGS'
    ```
-   Never pass the V outputs on the command line (a heredoc with code in it needs the user's approval). Never Write `visual.md` itself.
+   A `missing <key> <name> <path>` line: if that reader replied with its output instead of `stored`, Write the reply to `<path>`, else spawn that V task again; then run `visual-put` again, once. Never Write `visual.md` itself.
+2. `plan.mode` = `visual`: Read each video's `context_md` (title, source, chapters, file paths), its visual timeline (the path `visual-put` printed, or `visual_md` when reused) and its `transcript_md`, all in one message.
+3. `plan.mode` = `windowed`: never Read transcripts, windows, digests or `plan_path`.
+   1. One T subagent per name in `plan.t_tasks` (same single-message, 12-per-wave, `run_in_background: false` rule), prompt as in section 5 step 2 with `references/transcript-digest.md`. Each replies `stored <id>`; a reply that is the digest itself: Write it to `<plan.parts_dir>/<name>.md`.
+   2. Then one M subagent per name in `plan.m_tasks`, same rules, prompt as in section 5 step 2 with `references/merger.md`. Its reply is that video's merged digest (`S` takeaways, timeline, `Q`, `STEP`, `ASK`, `SCREEN` lines): work from it.
+   3. `--code`: also Read that video's visual timeline (the code blocks are only there).
+4. If `--save` was passed and its procedure has not run yet, run it now, in parallel.
+
+## 7. Merge
+
+Per video, merge into one timeline by tile number and timestamp: the visual timeline (plus sheets you read) and the transcript in visual mode, the M reply (plus sheets you read) in windowed mode.
 
 ## 8. Answer
 
@@ -126,7 +126,7 @@ Load `references/output-formats.md` and answer per mode. Keep the paths (`transc
 
 ## 9. Errors
 
-- Per-video `error` or `warnings` in the result: load `references/troubleshooting.md` and write one line per video (e.g. "Instagram needs a login: rerun with `--cookies chrome`"). Still answer for the other videos.
+- Per-video `error` or `warnings` in `videos[]`: load `references/troubleshooting.md` and write one line per video (e.g. "Instagram needs a login: rerun with `--cookies chrome`"). Still answer for the other videos.
 - `no_audio`: visual-only answer, say so. `no_video`: transcript-only answer, say so.
 - Exit 7 from `wait`, or three stale exit-6 rounds: `W cancel --run RUN`, then report the last WFM line and the `log` path from `WFM_WAIT`, and stop.
 - `run` exit 2 (usage) or 3 (prerequisites): show its stderr line and the doctor hint, stop.
@@ -135,7 +135,7 @@ Load `references/output-formats.md` and answer per mode. Keep the paths (`transc
 
 | Missing | Do this |
 |---|---|
-| Subagent tool | Read sheets yourself in plan order. Over 12 sheets for a video: read 12 spread evenly plus the sheets with chapter starts, and say "visuals sampled: 12 of N sheets". Never read more than ~40 images in one run (e.g. 4 per video for 10 videos) |
+| Subagent tool | Read sheets yourself in time order (`<view_dir>/sheets/`). Over 12 sheets for a video: read 12 spread evenly plus the sheets with chapter starts, and say "visuals sampled: 12 of N sheets". Never read more than ~40 images in one run (e.g. 4 per video for 10 videos). Windowed mode: read the transcript windows (`<view_dir>/windows/`) one at a time and keep notes short |
 | Image input | Skip visuals, answer from the transcript, one line: "Visuals not read: this agent can't view images." |
 | Background shell and `--detach` | Foreground `run` (no early visual start) |
 | Bash | Cannot run. One line: "watch-for-me needs a shell with uv and ffmpeg." |

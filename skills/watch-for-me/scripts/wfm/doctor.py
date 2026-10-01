@@ -9,6 +9,9 @@ JSON shape (`doctor --json`), skeleton decision:
  "models":[{"role":"parakeet","id":"…","repo":"…","cached":false,"mb":2510}, ...],
  "download_mb":{"english":int,"other_languages":int},   # models still missing (+ env est.)
  "free_gb":float,"cache_dir":str}
+`doctor --quick --brief` (the agent's preflight, ~1/10 the size): one JSON line
+{"v":1,"ok","exit","backend","failed":[{"name","blocking","hint"}] (failed checks only),
+ "models_missing":[roles not cached],"download_mb":{...} (only when something is missing, else null)}
 Check names: ffmpeg, ffprobe, uv, ffmpeg_fps_mode (warn < 5.1), js_runtime (info: deno ships
 with yt-dlp[deno]; node/bun listed), free_disk (warn < 5 GB), backend, macos_version
 (mlx: warn < 14), uv_script_lock (warn if uv too old for script lockfiles), models.
@@ -236,3 +239,14 @@ def render_table(report: Report) -> str:
         lines.append("first run downloads: nothing (all models cached)")
     lines.append(f"cache: {report.cache_dir}  ({report.free_gb} GB free)")
     return "\n".join(lines)
+
+
+def to_brief(report: Report) -> dict[str, Any]:
+    """Module docstring `--brief` shape: only what the agent acts on."""
+    missing = [m["role"] for m in report.models if not m["cached"]]
+    dl = first_run_download_mb(report)
+    return {
+        "v": 1, "ok": not report.blocking_failed, "exit": report.exit_code, "backend": report.backend,
+        "failed": [{"name": c.name, "blocking": c.blocking, "hint": c.hint} for c in report.checks if not c.ok],
+        "models_missing": missing, "download_mb": dl if any(dl.values()) else None,
+    }

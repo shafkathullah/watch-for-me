@@ -148,4 +148,28 @@ Findings:
 Cleanup: all runs finished on their own (no `claude -p`, `watch.py`, ASR worker or ffmpeg left running); scratch caches, temp config dir, npx temp HOME and projects deleted.
 
 
-Still open: ~3 words lost at each language switch (#8), mixed ASR 19.7x vs 20x, main-context token targets and `transcript_tokens_est` calibration (above), #12 from a network that reaches TikTok, #19 against stag, #20, #26, #27, #25 via the `/plugin` UI and Codex.
+### 2026-10-01: main-context token pass
+
+Same machine and harness (headless `claude -p`, Claude Code 2.1.285, Opus 5.5, `--plugin-dir`, `--setting-sources project --strict-mcp-config --permission-prompts none`, no user allow rules). Every run on a fresh scratch `WFM_CACHE_DIR`. "Main ctx" = peak input tokens of the main agent minus its first turn (~20.5k before, ~20.8k after: SKILL.md grew ~200 tokens, which sits in the first turn). Task continuation is Claude-invoked, so its first turn is 16.0k (no skill loaded yet) and the delta includes SKILL.md. "Before" for #1 / 2 h is the pass above; the 5C_HPTJg5ek rows were re-run today on a frozen copy of the pre-change skill.
+
+| Case | Before: main ctx / wall / cost | After: main ctx / wall / cost | Target | Subagents after | Notes |
+|---|---|---|---|---|---|
+| default, #1 1 h talk | +53.1k / 216 s / $1.07 | **+13.3k** / 215 s / $1.34 (rerun; first run +13.5k / 217 s / $1.34) | <= 25k (default), <= 12k (windowed) | 2 V + 4 T + 1 M | now `windowed` (tokens_est 25,410); 25-line timeline, 6 summary bullets. First run: 1 denial (a V reader tried `Edit` on its part file); fixed in the reader prompts, rerun 0 denials |
+| default, 2 h `kCc8FmEb1nY` | +82.5k / 445 s / $3.06 | **+18.0k** / 306 s / $2.63 | <= 12k | 6 V + 8 T + 1 M | 0 denials, 25-line timeline. Target missed, see below |
+| `--tldr`, #2 | +15.2k / 52 s / $0.27 | **+10.6k** / 30 s / $0.23 | | 0 (2 light sheets) | 0 denials, same format |
+| `--code`, #2 | +34.1k / 163 s / $1.35 | **+16.5k** / 99 s / $1.03 | | 3 V | 0 denials, 5 files; `04-main.rs` matches the stored `CODE#36` block line for line (plus the `println!` from the later frame the reader noted) |
+| task continuation, #2 ("watch … and write the Rust program it shows into ./demo as a cargo project"; allows `Skill`, `Bash(uv run --script *watch.py*)`, `Read`, `Edit(<cache>/**)`, acceptEdits) | +31.7k / 137 s / $1.13 | **+21.6k** / 109 s / $1.13; rerun +23.8k / 120 s / $1.13 | | 3 V | `demo/Cargo.toml`, `src/main.rs`, `.gitignore` written; `cargo new` denied in all 3 runs (not a skill command, as in #23). Observation: before, `Watched Rust in 100 Seconds (2:29).` opened the final message; in both after runs it is its own message right after watching and the final message is a summary (the line is still emitted; model variance or wording, not changed here) |
+
+What changed (details in the spec 4.6 / 5):
+- `transcript_tokens_est` measures the transcript .md (chars / 3 + CJK chars + 2 per line), calibrated on #1 (estimate 25,410 vs ~25.7k measured); windowed threshold 20k -> 15k.
+- Subagent prompts are 4 lines (reference path, `TASK:` file, `MODES`, `QUESTION`); the CLI writes `runs/<id>/tasks/<key>.<id>.json` (batch, `frame` line, `out` path). Before: the full reference + batch JSON per prompt (~1.2k tokens each).
+- V and T readers Write their own output to `runs/<id>/parts/` and reply `stored <id>`; `visual-put --run` joins the V parts into `visual.md`. Before: outputs came back in-band and the agent Wrote `visual.draft.md`, echoing them a second time.
+- Windowed mode: one M (merger) subagent per video reads context + `visual.md` + T digests and returns one <= 2.5k-token digest; the main agent never sees T digests or V outputs.
+- `WFM_WAIT` prints a compact plan (task names, `tasks_dir`, `parts_dir`, inline / light sheets) and trimmed video entries, no `result` (2 h done-wait: 19k -> 2.8k chars). `doctor --quick --brief` (1.7k -> 111 chars).
+
+Why 2 h still misses 12k (main-context chars in the after run): 15 subagent hand-backs 9.6k (`stored <id>` plus the harness's ~700-char wrapper per subagent), 15 Agent calls 6.1k, Bash results 5.2k, `output-formats.md` 4.1k, M digest 9.0k; the rest is the agent's own messages and thinking. Most of it scales with the subagent count (6 V + 8 T + 1 M), which the 4-sheets-per-batch and 15-minute-window rules fix; changing those trades reader quality, not done here. The 1 h talk is +1.3k over the windowed target and well inside the default-mode one.
+
+Cleanup: no `claude -p`, `watch.py`, ASR worker or ffmpeg process left; scratch caches, project dirs and the frozen pre-change copy deleted.
+
+
+Still open: ~3 words lost at each language switch (#8), mixed ASR 19.7x vs 20x, windowed main-context target on the 2 h video (+18.0k vs 12k, above), #12 from a network that reaches TikTok, #19 against stag, #20, #26, #27, #25 via the `/plugin` UI and Codex.

@@ -9,13 +9,21 @@ separated from writers (write_*) so tests need no filesystem.
 plan.json shape (spec 4.6 + skeleton additions marked +):
 {"v":1,"run_id","stage":"frames"|"done"(+),"mode":"visual"|"windowed"|null(+null at frames),
  "transcript_tokens_est":int|null(+null at frames),"code":bool,
+ "views":{key: view_dir}(+),
  "inline_sheets":[{"key","sheets":[abs...]}],
  "visual_batches":[{"id":"V01","key","sheets":[abs...],"tiles":[first_n,last_n],"t0","t1"}],
- "transcript_windows":[{"id":"T01","key","file":abs,"t0","t1","words"}](+shape)}
+ "transcript_windows":[{"id":"T01","key","file":abs,"t0","t1","words"}](+shape),
+ "tasks_dir":abs(+, write_tasks), "light_sheets":[...](+, cli)}
 - V ids are numbered across the whole run (input order, then time); T ids are per
   video and equal the window file name (windows/T01.md), so (key, id) is unique.
 - Videos without frames (audio-only, no_video, frames error) contribute no visual
   entries; videos with status "error" contribute nothing.
+
+Subagent task files (write_tasks, spec 4.6): runs/<id>/tasks/<key>.<id>.json, one per V batch,
+T window and (windowed mode) one M merge per video. The agent's subagent prompt names the file
+instead of carrying the batch JSON, the FRAME command and the output path; each V/T subagent
+writes its output to the task's `out` (runs/<id>/parts/<key>.<id>.md) and replies `stored <id>`,
+so its text reaches the main agent once at most (visual.md via `visual-put --run`).
 """
 
 from __future__ import annotations
@@ -32,8 +40,14 @@ from .types import fmt_ts
 
 MAX_SHEETS_PER_BATCH = 4
 INLINE_MAX_SHEETS = 2  # a video with <= 2 sheets goes to inline_sheets
-TOKENS_PER_WORD = 1.35
-WINDOWED_THRESHOLD = 20_000  # transcript_tokens_est > this -> windowed
+# transcript_tokens_est measures the transcript .md the agent would Read (estimate_read_tokens).
+# Calibrated on the 1 h talk (#1): 71,869 chars / 728 lines read as ~25.7k tokens in Claude Code
+# (the `[mm:ss]` prefixes, `-- #n --` markers and the Read tool's line numbers all cost tokens;
+# words x 1.35 said 16.2k). 15k keeps a visual-mode run (transcript + V outputs + ~6k skill
+# overhead) inside the 25k main-context budget (spec 4.7); a 1 h talk goes windowed.
+CHARS_PER_TOKEN = 3.0
+TOKENS_PER_LINE = 2.0  # Read's "   123\t" line-number prefix + newline
+WINDOWED_THRESHOLD = 15_000  # transcript_tokens_est > this -> windowed
 WINDOW_TARGET_S = 900.0  # ~15 min
 WINDOW_SLACK_S = 300.0  # snap a boundary to an anchor within +-5 min of the target
 DESCRIPTION_CHARS = 600
@@ -43,9 +57,15 @@ VISUAL_HEADER_PREFIX = "# visual "
 # --------------------------------------------------------------------------
 # Pure helpers
 # --------------------------------------------------------------------------
-def transcript_tokens_est(total_words: int) -> int:
-    """round(total_words x 1.35) over the whole run."""
-    return round(max(0, total_words) * TOKENS_PER_WORD)
+def estimate_read_tokens(text: str) -> int:
+    """Main-context cost of Reading this transcript .md: non-CJK chars / CHARS_PER_TOKEN +
+    1 token per Han/kana/Hangul char + TOKENS_PER_LINE per line (calibration in the
+    constants above). Empty text -> 0."""
+    if not text:
+        return 0
+    cjk = len(asr_common._CJK_RE.findall(text))
+    lines = text.count("\n") + (0 if text.endswith("\n") else 1)
+    return round((len(text) - cjk) / CHARS_PER_TOKEN + cjk + lines * TOKENS_PER_LINE)
 
 
 def choose_mode(tokens_est: int) -> str:
@@ -149,10 +169,11 @@ def build_plan(run_id: str, stage: str, code: bool, videos: list[dict[str, Any]]
 
     videos: one entry per VideoResult with status != "error", in input order:
       {"key", "view_dir": str, "frames_json": dict|None, "words": int|None,
+       "tokens": int|None (estimate_read_tokens of the transcript .md this run wrote),
        "windows": [{"id","file","t0","t1","words"}] (already written, windowed mode only)}
     stage "frames": mode/transcript_tokens_est null, transcript_windows [].
-    stage "done": tokens from the sum of words; mode via choose_mode; windows included only
-    when mode == "windowed".
+    stage "done": transcript_tokens_est = sum of tokens; mode via choose_mode; windows
+    included only when mode == "windowed".
     """
     inline: list[dict[str, Any]] = []
     batches: list[dict[str, Any]] = []
@@ -164,13 +185,13 @@ def build_plan(run_id: str, stage: str, code: bool, videos: list[dict[str, Any]]
     mode = tokens = None
     windows: list[dict[str, Any]] = []
     if stage == "done":
-        tokens = transcript_tokens_est(sum(int(v.get("words") or 0) for v in videos))
+        tokens = sum(int(v.get("tokens") or 0) for v in videos)
         mode = choose_mode(tokens)
         if mode == "windowed":
             windows = [{"key": v["key"], **w} for v in videos for w in v.get("windows") or []]
     return {"v": 1, "run_id": run_id, "stage": stage, "mode": mode, "transcript_tokens_est": tokens,
-            "code": bool(code), "inline_sheets": inline, "visual_batches": batches,
-            "transcript_windows": windows}
+            "code": bool(code), "views": {v["key"]: str(v["view_dir"]) for v in videos},
+            "inline_sheets": inline, "visual_batches": batches, "transcript_windows": windows}
 
 
 _URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
@@ -317,3 +338,108 @@ def write_visual_md(view: ViewPaths, key: str, flags: str, body: str, version: s
     text = visual_header(key, view.vtag, flags, version) + "\n" + body.strip() + "\n"
     atomic_write_text(view.visual_md, text)
     return view.visual_md
+
+
+# --------------------------------------------------------------------------
+# Subagent task files + compact plan (WFM_WAIT)
+# --------------------------------------------------------------------------
+TASKS_DIR = "tasks"
+PARTS_DIR = "parts"
+
+
+def task_name(key: str, tid: str) -> str:
+    """"<key>.<id>" (V ids are run-wide, T ids per video, M once per video: always unique)."""
+    return f"{key}.{tid}"
+
+
+def shell_quote(s: str) -> str:
+    """POSIX single quotes, embedded ' as '\\'' (SKILL.md section 1 quoting rule)."""
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
+def frame_command(watch_py: Path | str, key: str) -> str:
+    """The exact FRAME command a V reader may run (only --t/--crop/--width change)."""
+    return f"uv run --script {shell_quote(str(watch_py))} frame {shell_quote(key)} --t <SECONDS>"
+
+
+def build_tasks(p: dict[str, Any], run_dir: Path, watch_py: Path | str) -> dict[str, dict[str, Any]]:
+    """{name: task dict} for every V batch, T window and (windowed) M merge in plan p.
+    V: {"role":"V","id","key","sheets","tiles","t0","t1","code","frame","out"}
+    T: {"role":"T","id","key","file","t0","t1","words","out"}
+    M: {"role":"M","id":"M","key","context","visual"(abs visual.md or null without frames),
+        "digests":[T outs, time order]}
+    `out` = runs/<id>/parts/<name>.md. Pure."""
+    parts = Path(run_dir) / PARTS_DIR
+    views = p.get("views") or {}
+    out: dict[str, dict[str, Any]] = {}
+    for b in p.get("visual_batches") or []:
+        name = task_name(b["key"], b["id"])
+        out[name] = {"role": "V", **b, "code": bool(p.get("code")),
+                     "frame": frame_command(watch_py, b["key"]), "out": str(parts / f"{name}.md")}
+    digests: dict[str, list[str]] = {}
+    for w in p.get("transcript_windows") or []:
+        name = task_name(w["key"], w["id"])
+        out[name] = {"role": "T", **w, "out": str(parts / f"{name}.md")}
+        digests.setdefault(w["key"], []).append(out[name]["out"])
+    has_frames = {b["key"] for b in p.get("visual_batches") or []} | {
+        e["key"] for e in p.get("inline_sheets") or []}
+    for key, outs in digests.items():
+        vdir = Path(views.get(key) or "")
+        out[task_name(key, "M")] = {
+            "role": "M", "id": "M", "key": key, "context": str(vdir / "context.md"),
+            "visual": str(vdir / "visual.md") if key in has_frames else None, "digests": outs}
+    return out
+
+
+def write_tasks(run_dir: Path, p: dict[str, Any], watch_py: Path | str) -> Path:
+    """Write runs/<id>/tasks/<name>.json for build_tasks(p), create runs/<id>/parts/ (the
+    subagents' Write targets), set p["tasks_dir"]. Returns the tasks dir."""
+    tdir = Path(run_dir) / TASKS_DIR
+    tdir.mkdir(parents=True, exist_ok=True)
+    (Path(run_dir) / PARTS_DIR).mkdir(parents=True, exist_ok=True)
+    for name, task in build_tasks(p, run_dir, watch_py).items():
+        atomic_write_json(tdir / f"{name}.json", task)
+    p["tasks_dir"] = str(tdir)
+    return tdir
+
+
+def compact_plan(p: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What WFM_WAIT prints instead of the whole plan.json (a 2 h video's plan is ~7k chars
+    and every wait printed it): task names per role (prompt: `<tasks_dir>/<name>.json`) and
+    the few sheet paths the main agent reads itself."""
+    if not p:
+        return p
+    batches = p.get("visual_batches") or []
+    windows = p.get("transcript_windows") or []
+    m_keys = list(dict.fromkeys(w["key"] for w in windows))
+    return {
+        "stage": p.get("stage"), "mode": p.get("mode"), "transcript_tokens_est": p.get("transcript_tokens_est"),
+        "code": p.get("code"), "tasks_dir": p.get("tasks_dir"),
+        "parts_dir": str(Path(p["tasks_dir"]).parent / PARTS_DIR) if p.get("tasks_dir") else None,
+        "v_tasks": [task_name(b["key"], b["id"]) for b in batches],
+        "t_tasks": [task_name(w["key"], w["id"]) for w in windows],
+        "m_tasks": [task_name(k, "M") for k in m_keys],
+        "inline_sheets": p.get("inline_sheets") or [], "light_sheets": p.get("light_sheets") or [],
+    }
+
+
+def assemble_visual(run_dir: Path, p: dict[str, Any]) -> dict[str, tuple[str, str, list[str]]]:
+    """Per key with V batches: (view_dir, body, missing names). body = the V parts
+    (runs/<id>/parts/<key>.<Vnn>.md) stripped and joined in batch (= time) order; a part that
+    is absent or blank counts as missing."""
+    parts = Path(run_dir) / PARTS_DIR
+    views = p.get("views") or {}
+    acc: dict[str, tuple[list[str], list[str]]] = {}
+    for b in p.get("visual_batches") or []:
+        name = task_name(b["key"], b["id"])
+        texts, missing = acc.setdefault(b["key"], ([], []))
+        f = parts / f"{name}.md"
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            text = ""
+        if text:
+            texts.append(text)
+        else:
+            missing.append(name)
+    return {k: (str(views.get(k) or ""), "\n".join(t) + "\n" if t else "", m) for k, (t, m) in acc.items()}

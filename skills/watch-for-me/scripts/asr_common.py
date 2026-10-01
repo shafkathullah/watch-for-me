@@ -153,7 +153,7 @@ CREDIT_RE = re.compile(r"amara\.org|sous-titr|subtitle|untertitel|legenda|sottot
 # whitespace split counts a whole 10 s sentence as 1 word [M: Japanese talk, two real ~10 s
 # segments dropped by the < 0.3 words/s rule, tokens_est 267 for 9 min of speech].
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]")
-CJK_CHAR_WORDS = 0.75  # one CJK char ~ 1 token ~ 0.75 word at plan.TOKENS_PER_WORD 1.35
+CJK_CHAR_WORDS = 0.75  # one CJK char ~ 1 token ~ 0.75 English word (~1.35 tokens per word)
 
 # --------------------------------------------------------------------------
 # Models (IMPLEMENTED; stdlib; used by worker, asr_client params_hash, doctor)

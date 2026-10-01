@@ -187,13 +187,15 @@ def test_wait_reached(wfm_cache: Path, capsys: pytest.CaptureFixture[str]) -> No
     _run_json("wfmfr0001", frames_reached=True)
     (wfm_cache / "runs" / "wfmfr0001" / "plan.json").write_text('{"v":1,"stage":"frames"}')
     code, obj = _wait(capsys, "--run", "wfmfr0001", "--until", "frames", "--timeout", "0")
-    assert code == 0 and obj["reached"] is True and obj["plan"] == {"v": 1, "stage": "frames"}
+    assert code == 0 and obj["reached"] is True and obj["plan"]["stage"] == "frames"
+    assert obj["plan_path"].endswith("wfmfr0001/plan.json")
     # --until done is not reached by frames_reached alone
     code, _ = _wait(capsys, "--run", "wfmfr0001", "--until", "done", "--timeout", "0")
     assert code == 6
     _run_json("wfmdone01", state="done", exit=4, result={"v": 1, "exit": 4}, pid=None)
     code, obj = _wait(capsys, "--run", "wfmdone01", "--until", "done", "--timeout", "0")
-    assert code == 0 and obj["run_exit"] == 4 and obj["result"] == {"v": 1, "exit": 4}
+    assert code == 0 and obj["run_exit"] == 4 and "result" not in obj  # on disk only (run.json)
+    assert obj["plan"] is None and obj["plan_path"] is None
 
 
 def test_wait_on_cancelled_run_is_exit_130(wfm_cache: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -348,7 +350,7 @@ def test_detach_returns_fast_and_wait_sees_it(wfm_cache: Path, tmp_path: Path) -
     assert w.returncode == 0, w.stdout + w.stderr
     obj = parse_json_line(w.stdout.strip().splitlines()[-1], TAG_WAIT)
     assert obj is not None and obj["state"] == "done" and obj["run_exit"] == 5
-    assert obj["result"]["videos"][0]["error"]["code"] == "unsupported_url"
+    assert obj["videos"][0]["error"]["code"] == "unsupported_url"
     log = (wfm_cache / "runs" / "wfmdet001" / "log").read_text()
     assert "WFM_RESULT" in log and " - run start " in log
     assert json.loads(log.strip().splitlines()[-1].split(" ", 1)[1])["exit"] == 5
@@ -427,3 +429,38 @@ def test_run_video_only_pipeline_and_cached_rerun(wfm_cache: Path, tmp_path: Pat
     assert cli.main(["run", str(src), "--video-only", "--quiet", "--fresh"]) == 0
     v4 = parse_json_line(capsys.readouterr().out.strip().splitlines()[-1], TAG_RESULT)["videos"][0]
     assert v4["visual_cached"] is False and v4["visual_md"] is None and not vmd.exists()
+
+
+def test_wait_output_is_compact(wfm_cache: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """WFM_WAIT is read by the agent every round: compact plan (task names, not batches with
+    every sheet path) and only the video fields the skill uses; no duplicate `result`."""
+    from wfm import plan
+
+    big = VideoResult(input="u", key="k1", status="done", title="T", duration=6980.0,
+                      view_dir="/c/k1/views/full-720", sheets=[f"/c/k1/views/full-720/sheets/s{i}.jpg" for i in range(23)],
+                      frames_json="/c/k1/views/full-720/frames.json").to_dict()
+    _run_json("wfmcomp01", state="done", exit=0, frames_reached=True, pid=None, videos=[big],
+              result={"v": 1, "videos": [big]})
+    rdir = wfm_cache / "runs" / "wfmcomp01"
+    p = {"v": 1, "run_id": "wfmcomp01", "stage": "done", "mode": "windowed", "transcript_tokens_est": 40_000,
+         "code": False, "views": {"k1": "/c/k1/views/full-720"}, "inline_sheets": [],
+         "visual_batches": [{"id": f"V{i:02d}", "key": "k1", "sheets": [f"/c/s{j}.jpg" for j in range(4)],
+                             "tiles": [1, 36], "t0": 0.0, "t1": 1.0} for i in range(1, 7)],
+         "transcript_windows": [{"key": "k1", "id": f"T{i:02d}", "file": f"/c/w/T{i:02d}.md", "t0": 0, "t1": 1,
+                                 "words": 2000} for i in range(1, 9)],
+         "light_sheets": [{"key": "k1", "sheets": ["/c/s0.jpg", "/c/s9.jpg"]}]}
+    plan.write_tasks(rdir, p, "/skill/scripts/watch.py")
+    plan.write_plan(rdir, p)
+    code, obj = _wait(capsys, "--run", "wfmcomp01", "--until", "done", "--timeout", "0")
+    assert code == 0
+    cp = obj["plan"]
+    assert cp["v_tasks"] == [f"k1.V{i:02d}" for i in range(1, 7)]
+    assert cp["t_tasks"] == [f"k1.T{i:02d}" for i in range(1, 9)] and cp["m_tasks"] == ["k1.M"]
+    assert cp["tasks_dir"] == str(rdir / "tasks") and cp["parts_dir"] == str(rdir / "parts")
+    assert all((rdir / "tasks" / f"{n}.json").is_file() for n in cp["v_tasks"] + cp["t_tasks"] + cp["m_tasks"])
+    assert cp["light_sheets"] == p["light_sheets"] and "visual_batches" not in cp
+    v = obj["videos"][0]
+    assert v["title"] == "T" and v["view_dir"] == "/c/k1/views/full-720" and "sheets" not in v
+    assert "result" not in obj
+    line = format_json_line(TAG_WAIT, obj)
+    assert len(line) < 2_000, len(line)  # the full plan + result of this run was ~10k chars
