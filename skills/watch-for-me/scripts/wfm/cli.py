@@ -548,7 +548,7 @@ def _self_start() -> float | None:
 def _words(transcript: dict[str, Any] | None) -> int:
     if not transcript:
         return 0
-    return sum(len(str(s.get("text", "")).split()) for s in transcript.get("segments") or [])
+    return sum(asrc.ac.count_words(str(s.get("text", ""))) for s in transcript.get("segments") or [])
 
 
 def _ytdlp_version() -> str | None:

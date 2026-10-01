@@ -327,6 +327,27 @@ def test_filter_whisper_segments() -> None:
     assert ac.filter_whisper_segments(keep + drop) == keep
 
 
+def test_count_words_cjk() -> None:
+    assert ac.count_words("hello  world ") == 2
+    assert ac.count_words("") == 0
+    # ja without spaces: 0.75 word per Han/kana char, not 1 word per sentence
+    assert ac.count_words("ググって出てこないようなものであれば") == round(18 * 0.75)
+    assert ac.count_words("その windows だと") == 1 + round(4 * 0.75)
+    assert ac.count_words("誰が決めたんですか。") == round(9 * 0.75)  # "。" is not a word
+
+
+def test_filter_whisper_keeps_long_cjk_segments() -> None:
+    """Regression (#9, Japanese talk IcQwLGDzmVQ): real ~10 s Whisper segments without
+    spaces were 1-2 "words" -> < 0.3 words/s -> dropped as hallucinations."""
+    ja = {"t0": 348.9, "t1": 358.7, "text": "独学専門学校国公立大学私立大学のどの道を選ぶべきでしょうか国公立大学 "
+          "家庭は裕福な方なのでお金の心配はないですよくさんの意見を聞かせてください",
+          "avg_logprob": -0.3, "compression_ratio": 1.2, "no_speech_prob": 0.0}
+    zh = {"t0": 0.0, "t1": 12.0, "text": "我们今天来讨论一下这个问题的几个方面以及它对未来的影响",
+          "avg_logprob": -0.3, "compression_ratio": 1.2, "no_speech_prob": 0.0}
+    credit = {"t0": 0.0, "t1": 3.0, "text": "ご視聴ありがとうございました", "avg_logprob": -0.1}
+    assert ac.filter_whisper_segments([ja, zh, credit]) == [ja, zh]
+
+
 # --------------------------------------------------------------------------
 # decode + process_job end to end (fake engine, real ffmpeg)
 # --------------------------------------------------------------------------

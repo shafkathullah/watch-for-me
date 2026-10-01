@@ -149,6 +149,11 @@ NON_SPEECH_TAGS = frozenset({"music", "musique", "música", "musica", "musik", "
                              "applause", "laughter", "silence", "instrumental", "音楽", "音乐", "музыка"})
 CREDIT_RE = re.compile(r"amara\.org|sous-titr|subtitle|untertitel|legenda|sottotitoli|subtítulos|字幕|ご視聴"
                        r"|продолжение следует|редактор субтитров|チャンネル登録", re.IGNORECASE)
+# ja/zh/ko scripts: Han, kana (incl. half-width), Hangul. Written without spaces (ja/zh), so a
+# whitespace split counts a whole 10 s sentence as 1 word [M: Japanese talk, two real ~10 s
+# segments dropped by the < 0.3 words/s rule, tokens_est 267 for 9 min of speech].
+_CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f\uac00-\ud7af]")
+CJK_CHAR_WORDS = 0.75  # one CJK char ~ 1 token ~ 0.75 word at plan.TOKENS_PER_WORD 1.35
 
 # --------------------------------------------------------------------------
 # Models (IMPLEMENTED; stdlib; used by worker, asr_client params_hash, doctor)
@@ -817,6 +822,16 @@ def route_engine(lang: str, lang_p: float, forced: bool) -> str:
     return ENGINE_WHISPER
 
 
+def count_words(text: str) -> int:
+    """Word count for speech rates, `words=` headers and token estimates: whitespace words
+    of the non-CJK text plus CJK_CHAR_WORDS per Han/kana/Hangul char (stdlib)."""
+    cjk = len(_CJK_RE.findall(text))
+    if not cjk:
+        return len(text.split())
+    rest = sum(1 for w in _CJK_RE.sub(" ", text).split() if re.search(r"\w", w))  # not "。"
+    return rest + max(1, round(cjk * CJK_CHAR_WORDS))
+
+
 def is_hallucination_text(text: str, dur: float | None) -> bool:
     """Text-level Whisper hallucination guard (beyond the spec's logprob/compression
     rule, which keeps all of these [M: turbo on a real-instrument loop mix and on
@@ -825,7 +840,8 @@ def is_hallucination_text(text: str, dur: float | None) -> bool:
     - no letters/digits (".", "...", "♪");
     - a known non-speech tag ("Musique", "[Music]", "BGM", ...);
     - <= 8 words matching a subtitle-credit pattern (Amara.org, "Sous-titrage", 字幕, ...);
-    - >= 10 s long at < 0.3 words/s (real speech runs ~2-3 words/s)."""
+    - >= 10 s long at < 0.3 words/s (real speech runs ~2-3 words/s; count_words, so CJK
+      text without spaces is not one word)."""
     t = text.strip()
     if not re.search(r"\w", t):
         return True
@@ -835,7 +851,7 @@ def is_hallucination_text(text: str, dur: float | None) -> bool:
     words = len(t.split())
     if words <= 8 and CREDIT_RE.search(t):
         return True
-    return dur is not None and dur >= 10.0 and words / dur < 0.3
+    return dur is not None and dur >= 10.0 and count_words(t) / dur < 0.3
 
 
 def filter_whisper_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:

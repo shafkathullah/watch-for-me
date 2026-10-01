@@ -10,6 +10,8 @@ Look for a tool whose name ends in `save_bookmark` and whose server name contain
 
 If it is not directly callable, it may be deferred behind tool search: call `ToolSearch` with the query `+deepmark save_bookmark` and load it. Decide "not connected" only after that search finds nothing.
 
+Do this lookup in the same message as the first `wait --until frames` call (SKILL.md step 4), as a second tool call, with no text. Keep the outcome to yourself until the end of the answer: write nothing about it when the results come back, not even a short note like "Not connected." or "No save tool found.". Your next text to the user is the normal `Watching …` line, as if `--save` had not been passed.
+
 ## 2. Save (tool found)
 
 - As soon as the run's metadata is known (`title` and `webpage_url` in `WFM_WAIT` videos), call the tool **once per remote input**, all calls in parallel, with `{"url": <webpage_url>, "title": <title>}`.

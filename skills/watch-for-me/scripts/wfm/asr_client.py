@@ -422,7 +422,7 @@ def _primary_lang(chunks: list[dict[str, Any]], segments: list[dict[str, Any]]) 
 
 
 def _words(segments: list[dict[str, Any]]) -> int:
-    return sum(len(str(s.get("text", "")).split()) for s in segments)
+    return sum(ac.count_words(str(s.get("text", ""))) for s in segments)
 
 
 def build_transcript(events: list[dict[str, Any]], done: dict[str, Any], *, key: str, duration: float,

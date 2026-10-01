@@ -254,3 +254,12 @@ def test_engines_line_no_speech() -> None:
     assert plan.engines_line(t) == "no speech"
     t["stats"]["words"] = 3
     assert plan.engines_line(t) == "parakeet nn 1 chunks"
+
+
+def test_render_transcript_md_counts_cjk_words() -> None:
+    """Regression (#9): words= (and so transcript_tokens_est / visual-vs-windowed) used a
+    whitespace split, so 9 min of Japanese reported words=198 / tokens 267."""
+    t = {"key": "k", "primary_lang": "ja",
+         "segments": [{"t0": 0.0, "t1": 5.0, "text": "プログラミングにメンターがいるっていうのは誰が決めたんですか。"}]}
+    head = plan.render_transcript_md(t, "full").split("\n", 1)[0]
+    assert head.endswith("lang=ja words=22")  # 30 kana/Han chars x 0.75

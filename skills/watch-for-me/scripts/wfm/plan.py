@@ -25,6 +25,8 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
+import asr_common
+
 from .cache import KeyPaths, ViewPaths, atomic_write_json, atomic_write_text
 from .types import fmt_ts
 
@@ -60,7 +62,7 @@ def markers_from_frames(frames_json: dict[str, Any] | None) -> list[tuple[int, f
 
 
 def _words(text: str) -> int:
-    return len(text.split())
+    return asr_common.count_words(text)
 
 
 def render_transcript_md(transcript: dict[str, Any], rtag: str,
