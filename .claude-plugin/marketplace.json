@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "watch-for-me",
+  "description": "Local video understanding for coding agents.",
+  "owner": { "name": "Deepmark" },
+  "plugins": [
+    {
+      "name": "watch-for-me",
+      "description": "Watch any video: local transcription + keyframes read by your agent.",
+      "version": "0.1.0",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

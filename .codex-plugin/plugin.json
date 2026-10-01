@@ -1,0 +1,28 @@
+{
+  "name": "watch-for-me",
+  "version": "0.1.0",
+  "description": "Watch any video for your agent: YouTube, X, Instagram, TikTok or a local file. Speech transcribed on your device, keyframes read by your agent, several videos in parallel.",
+  "author": {
+    "name": "Deepmark",
+    "url": "https://usedeepmark.com"
+  },
+  "homepage": "https://usedeepmark.com/can-claude-watch-videos",
+  "repository": "https://github.com/shafkathullah/watch-for-me",
+  "license": "MIT",
+  "keywords": ["video", "transcription", "local-first", "yt-dlp", "keyframes", "agent-skills", "codex"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Watch for Me",
+    "shortDescription": "Watch any video: local transcription + keyframes",
+    "longDescription": "Give the agent a video link (YouTube, X, Instagram, TikTok, Vimeo, Loom and more) or a local file. Speech is transcribed on your device, keyframes are extracted into contact sheets that the agent reads, and the answer comes back as a timestamped timeline of what is said and shown. Summaries, steps, code, quotes or answers to a question. Up to 10 videos in parallel.",
+    "developerName": "Deepmark",
+    "category": "Productivity",
+    "capabilities": ["Instructions"],
+    "websiteURL": "https://github.com/shafkathullah/watch-for-me",
+    "defaultPrompt": [
+      "Use watch-for-me to summarize this video: <link>",
+      "Watch this video and give me the steps as a checklist.",
+      "Watch these videos and tell me what they say about <topic>."
+    ]
+  }
+}

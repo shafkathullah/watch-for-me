@@ -1,0 +1,49 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install ffmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Lint
+        run: uvx ruff check .
+
+      # Unit tests only: no network tests, no model downloads.
+      - name: Tests
+        run: uv run --no-project --python 3.13 --with pytest --with pillow --with numpy --with pyyaml pytest tests
+
+      - name: Tests (Python 3.10)
+        run: uv run --no-project --python 3.10 --with pytest --with pillow --with numpy --with pyyaml pytest tests
+
+      # Agent Skills spec check. argument-hint is a Claude Code key the reference
+      # validator does not know, so it is stripped from a temp copy first.
+      - name: Validate skill (Agent Skills spec)
+        run: |
+          tmp="$(mktemp -d)"
+          cp -R skills/watch-for-me "$tmp/watch-for-me"
+          grep -v '^argument-hint:' skills/watch-for-me/SKILL.md > "$tmp/watch-for-me/SKILL.md"
+          uvx --from skills-ref agentskills validate "$tmp/watch-for-me"

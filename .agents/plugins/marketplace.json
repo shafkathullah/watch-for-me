@@ -1,0 +1,21 @@
+{
+  "name": "watch-for-me",
+  "interface": {
+    "displayName": "Watch for Me"
+  },
+  "plugins": [
+    {
+      "name": "watch-for-me",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/shafkathullah/watch-for-me.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
