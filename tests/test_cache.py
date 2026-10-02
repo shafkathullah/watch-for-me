@@ -96,7 +96,7 @@ def test_manifest_roundtrip_and_stage_freshness(wfm_cache: Path) -> None:
     assert kp.dir == wfm_cache / "youtube-abc"
     assert cache.load_manifest(kp) is None
     m = cache.new_manifest("youtube-abc", {"input": "u", "webpage_url": "w", "extractor": "Youtube", "id": "abc"})
-    assert m["v"] == 1 and m["skill_version"] == "0.1.0" and m["source"]["local_path"] is None
+    assert m["v"] == 1 and m["skill_version"] == __import__("wfm").VERSION and m["source"]["local_path"] is None
     cache.set_stage(m, "transcripts/full", "running", params_hash="h1")
     assert m["stages"]["transcripts/full"]["status"] == "running"
     assert not cache.stage_fresh(m, "transcripts/full")

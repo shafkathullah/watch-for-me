@@ -219,7 +219,7 @@ def test_visual_put_cli(wfm_cache: Path, monkeypatch: pytest.MonkeyPatch, capsys
     path = Path(capsys.readouterr().out.strip())
     assert path == kp.view("full-720").visual_md
     text = path.read_text()
-    assert text.splitlines()[0] == "# visual youtube-x full-720 flags=code skill=0.1.0"
+    assert text.splitlines()[0] == f"# visual youtube-x full-720 flags=code skill={__import__('wfm').VERSION}"
     assert text.endswith("END\n") and "\u00e9" in text
     monkeypatch.setattr("sys.stdin", _Stdin("x"))
     assert cli.main(["visual-put", "youtube-x", "--view", "full-1080", "--flags", ""]) == 2  # unknown view
@@ -364,7 +364,7 @@ def test_visual_put_run_joins_parts(wfm_cache: Path, capsys: pytest.CaptureFixtu
     assert cli.main(["visual-put", "--run", "wfmput01", "--flags", "code"]) == 0
     assert Path(capsys.readouterr().out.strip()) == view.visual_md
     text = view.visual_md.read_text()
-    assert text.splitlines()[0] == "# visual youtube-x full-720 flags=code skill=0.1.0"
+    assert text.splitlines()[0] == f"# visual youtube-x full-720 flags=code skill={__import__('wfm').VERSION}"
     assert text.endswith(v1 + v2.strip() + "\n")  # time order, verbatim
     # usage errors
     assert cli.main(["visual-put", "--run", "nope0001", "--flags", "x"]) == 2

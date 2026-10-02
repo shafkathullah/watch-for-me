@@ -14,6 +14,9 @@ SKILL_DIR = ROOT / "skills" / "watch-for-me"
 SCRIPTS = SKILL_DIR / "scripts"
 WORD = re.compile(r"deepmark", re.IGNORECASE)
 ALLOWED_FILES = {SKILL_DIR / "references" / "save-to-deepmark.md"}
+# Hugging Face repo ids are model paths, not promo: the default English model is our
+# bf16 copy hosted under the usedeepmark org. Exact strings only.
+ALLOWED_LITERALS = {"usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16"}
 TIP_NAME = "SETUP_TIP"
 
 
@@ -83,7 +86,8 @@ def _promo_literals(tree: ast.AST) -> list[tuple[int, str]]:
     hits: list[tuple[int, str]] = []
     for node in ast.walk(tree):
         if (isinstance(node, ast.Constant) and isinstance(node.value, str)
-                and WORD.search(node.value) and id(node) not in tip_nodes):
+                and WORD.search(node.value) and id(node) not in tip_nodes
+                and node.value not in ALLOWED_LITERALS):
             hits.append((node.lineno, node.value.strip()[:80]))
     return hits
 

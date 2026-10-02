@@ -7,7 +7,7 @@
     {
       "name": "watch-for-me",
       "description": "Watch any video: local transcription + keyframes read by your agent.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./",
       "category": "productivity"
     }

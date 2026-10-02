@@ -38,7 +38,7 @@ Load only when a run reports errors or warnings. Write **one line per affected v
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| First run sits on `model start` for minutes | Speech model download (~2.5 GB, plus 1.6 GB for non-English) | Normal: keep waiting; `/watch-for-me --setup` prefetches |
+| First run sits on `model start` for minutes | Speech model download (~1.3 GB, plus 1.6 GB for non-English) | Normal: keep waiting; `/watch-for-me --setup` prefetches |
 | `meta done warn=no_js_runtime` | No JavaScript runtime for YouTube format extraction | Usually still works; `doctor` explains |
 | `Unrecognized option 'fps_mode'` in the log | ffmpeg older than 5.1 | Upgrade ffmpeg (the tool falls back automatically; report if not) |
 | `zsh: no matches found` | Link was not quoted | Quote every link in single quotes |

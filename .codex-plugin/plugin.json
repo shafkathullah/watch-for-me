@@ -1,6 +1,6 @@
 {
   "name": "watch-for-me",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Watch any video for your agent: YouTube, X, Instagram, TikTok or a local file. Speech transcribed on your device, keyframes read by your agent, several videos in parallel.",
   "author": {
     "name": "Deepmark",

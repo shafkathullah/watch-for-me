@@ -160,7 +160,8 @@ CJK_CHAR_WORDS = 0.75  # one CJK char ~ 1 token ~ 0.75 English word (~1.35 token
 # --------------------------------------------------------------------------
 DEFAULT_MODELS: dict[str, dict[str, str]] = {
     "mlx": {
-        "parakeet": "mlx-community/parakeet-tdt-0.6b-v3",
+        # bf16 copy of mlx-community/parakeet-tdt-0.6b-v3: same output, half the download.
+        "parakeet": "usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16",
         "whisper": "mlx-community/whisper-large-v3-turbo",
         "lid": "mlx-community/whisper-tiny-mlx",
     },
@@ -185,6 +186,7 @@ HF_REPO_FOR_ALIAS: dict[str, str] = {
 # configured id equals the repo (env overrides float). A cached snapshot of the pinned
 # revision loads with no network call; otherwise snapshot_download(revision=pin).
 MODEL_REVISIONS: dict[str, str] = {
+    "usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16": "37841f726710dd4a8bc0f64103c6a1ead66ccfa6",
     "mlx-community/parakeet-tdt-0.6b-v3": "ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15",
     "mlx-community/whisper-large-v3-turbo": "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb",
     "mlx-community/whisper-tiny-mlx": "6caf9c55601caafbe6508a8b0d216bdf4783c4e8",
@@ -193,6 +195,7 @@ MODEL_REVISIONS: dict[str, str] = {
 }
 # Approximate download sizes in MB (spec 4.5 "Model downloads" [M]).
 MODEL_SIZES_MB: dict[str, int] = {
+    "usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16": 1255,
     "mlx-community/parakeet-tdt-0.6b-v3": 2510,
     "mlx-community/whisper-large-v3-turbo": 1610,
     "mlx-community/whisper-tiny-mlx": 74,

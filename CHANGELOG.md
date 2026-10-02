@@ -2,6 +2,11 @@
 
 All notable changes to watch-for-me. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.1] - 2026-10-02
+
+### Changed
+- English speech model now downloads from [usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16](https://huggingface.co/usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16), a bf16 copy of `mlx-community/parakeet-tdt-0.6b-v3` with identical output. First run drops from about 3 GB to about 2 GB. Set `WFM_PARAKEET_MODEL=mlx-community/parakeet-tdt-0.6b-v3` to keep the old model.
+
 ## [0.1.0] - 2026-09-29
 
 First release.

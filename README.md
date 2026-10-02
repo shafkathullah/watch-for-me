@@ -21,7 +21,7 @@ You also need [uv](https://docs.astral.sh/uv/) and ffmpeg (see [Requirements](#r
 
 ## First run
 
-The first run downloads the speech models and a Python runtime once: about **3 GB** for English (Parakeet 2.5 GB + a 74 MB language detector + runtime), about **5 GB** if you also watch non-English videos (Whisper turbo, 1.6 GB, fetched on the first non-English speech). Later runs start in seconds.
+The first run downloads the speech models and a Python runtime once: about **2 GB** for English (Parakeet 1.25 GB + a 74 MB language detector + runtime), about **3.5 GB** if you also watch non-English videos (Whisper turbo, 1.6 GB, fetched on the first non-English speech). Later runs start in seconds.
 
 Prefetch everything up front instead of waiting on your first video:
 
@@ -96,7 +96,7 @@ Nothing else: Python dependencies install themselves through uv, and the JavaScr
 
 | Model | Used for | Size | License |
 |---|---|---|---|
-| [nvidia/parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) via [mlx-community/parakeet-tdt-0.6b-v3](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) | English speech (Apple Silicon) | 2.51 GB | CC BY 4.0, NVIDIA |
+| [nvidia/parakeet-tdt-0.6b-v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) via [mlx-community/parakeet-tdt-0.6b-v3](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3), as our bf16 copy [usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16](https://huggingface.co/usedeepmark/parakeet-tdt-0.6b-v3-mlx-bf16) (identical output) | English speech (Apple Silicon) | 1.25 GB | CC BY 4.0, NVIDIA |
 | [istupakov/parakeet-tdt-0.6b-v3-onnx](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx) (int8) | English speech (CPU) | 670 MB | CC BY 4.0, NVIDIA |
 | [mlx-community/whisper-large-v3-turbo](https://huggingface.co/mlx-community/whisper-large-v3-turbo) | Other languages (Apple Silicon) | 1.61 GB | MIT (OpenAI Whisper) |
 | [dropbox-dash/faster-whisper-large-v3-turbo](https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo) | Other languages (CPU) | 1.6 GB | MIT |
@@ -122,7 +122,7 @@ Models live in the Hugging Face cache (`~/.cache/huggingface/hub`, or `$HF_HOME`
    - with the skill still installed: `uv run --script <skill dir>/scripts/watch.py cache clear --all`
    - or delete the folder: `~/Library/Caches/watch-for-me` (macOS), `~/.cache/watch-for-me` (Linux), `%LOCALAPPDATA%\watch-for-me\Cache` (Windows), or your `WFM_CACHE_DIR`.
 3. Delete the models from `~/.cache/huggingface/hub` (or `$HF_HOME/hub`):
-   - `models--mlx-community--parakeet-tdt-0.6b-v3` (2.5 GB)
+   - `models--usedeepmark--parakeet-tdt-0.6b-v3-mlx-bf16` (1.25 GB)
    - `models--mlx-community--whisper-large-v3-turbo` (1.6 GB)
    - `models--mlx-community--whisper-tiny-mlx` (74 MB)
    - CPU path: `models--istupakov--parakeet-tdt-0.6b-v3-onnx` (670 MB), `models--dropbox-dash--faster-whisper-large-v3-turbo` (1.6 GB), `models--Systran--faster-whisper-tiny` (76 MB), `models--istupakov--silero-vad-onnx` (6 MB)
@@ -159,7 +159,7 @@ Models live in the Hugging Face cache (`~/.cache/huggingface/hub`, or `$HF_HOME`
 | Problem | Fix |
 |---|---|
 | `ffmpeg` or `uv` not found | Install them (see [Requirements](#requirements)), then retry |
-| First run looks stuck | It is downloading ~3 GB of models; run `/watch-for-me --setup` once to see progress |
+| First run looks stuck | It is downloading ~2 GB of models; run `/watch-for-me --setup` once to see progress |
 | "needs a login" / private video | `--cookies chrome` (or your browser) |
 | Playlist or multi-video post refused | Add `--playlist N` |
 | Video longer than 4 hours | `--from` / `--to`, or `--max-minutes` |

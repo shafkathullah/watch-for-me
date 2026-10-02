@@ -369,7 +369,8 @@ def test_usage_errors_exit_2(wfm_cache: Path, capsys: pytest.CaptureFixture[str]
     assert cli.main(["bogus"]) == 2
     assert cli.main([]) == 2
     assert cli.main(["--version"]) == 0
-    assert "0.1.0" in capsys.readouterr().out
+    from wfm import VERSION
+    assert VERSION in capsys.readouterr().out
 
 
 def test_options_intermixed_and_code_implies_hires() -> None:

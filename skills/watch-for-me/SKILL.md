@@ -10,7 +10,7 @@ allowed-tools:
   - Write
   - Agent
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # watch-for-me
@@ -69,14 +69,14 @@ Up to 10 links at once. Speech is transcribed on this device.
 
 `W doctor --quick --brief`
 - Exit 3: show the `hint` of every `failed` entry with `blocking: true` (for example `brew install ffmpeg`, `curl -LsSf https://astral.sh/uv/install.sh | sh`) and stop.
-- `models_missing` contains `parakeet` or `lid`: tell the user once, "First run downloads ~3 GB (speech models + runtime), ~5 GB if the video isn't in English; later runs start in seconds."
+- `models_missing` contains `parakeet` or `lid`: tell the user once, "First run downloads ~2 GB (speech models + runtime), ~3.5 GB if the video isn't in English; later runs start in seconds."
 
 ## 4. Start the run
 
 1. `W run --detach '<input>'... <cli flags>`: prints `WFM_STARTED {"run_id":…,"pid":…}` in under a second. `RUN` = that `run_id`. Never make up a run id.
 2. `W wait --run RUN --until frames --timeout 540` with Bash `timeout: 600000`. It prints one `WFM_WAIT {json}` line: the run's state, `videos[]` (title, duration, file paths, `last` WFM line) and a compact `plan` (task names, the few sheets you read yourself). Never Read `plan_path`: everything you need is in `WFM_WAIT`. With `--save`, put that procedure's tool lookup (its step 1) in this same message as a second tool call, and write no text in the message.
    - Exit 0: continue.
-   - Exit 6 (still running): give the user one short line from the newest WFM lines (`videos[].last`, `last_run_line`), e.g. "Downloading speech model, 2.5 GB", then wait again. Keep waiting while new WFM lines appear.
+   - Exit 6 (still running): give the user one short line from the newest WFM lines (`videos[].last`, `last_run_line`), e.g. "Downloading speech model, 1.3 GB", then wait again. Keep waiting while new WFM lines appear.
    - Exit 7 (the run died), or exit 6 three rounds in a row with no new WFM line: go to step 9. Exit 130: the run was cancelled; say so and stop.
 3. If `--detach` fails (non-zero exit, no `WFM_STARTED`): run the same command without `--detach` in the host's background shell (Claude Code: `run_in_background: true`) and wait as above. No background shell: run it in the foreground (Bash timeout 600000; no early visuals), then continue with the `run_id` of its `WFM_RESULT` line (the waits return at once).
 4. Once titles and durations are known, one line to the user: `Watching N video(s), <total duration>. Transcript ready in ~<total seconds/40 + 15> s.` If `--save` was passed, continue its procedure now, in parallel, silently: its only output is its one line at the end of the answer. No progress note about it, not even "Not connected.".
