@@ -42,7 +42,8 @@ ENV_MB = {"mlx": 540, "cpu": 400, "watch": 110}  # approx env sizes for the firs
 INSTALL_HINTS = {
     "ffmpeg": {"darwin": "brew install ffmpeg", "linux": "sudo apt install ffmpeg  (or your distro's package)",
                "win32": "winget install ffmpeg"},
-    "uv": {"*": "curl -LsSf https://astral.sh/uv/install.sh | sh"},
+    "uv": {"darwin": "brew install uv  (or see https://docs.astral.sh/uv/getting-started/installation/)",
+           "*": "install uv: https://docs.astral.sh/uv/getting-started/installation/"},
 }
 
 

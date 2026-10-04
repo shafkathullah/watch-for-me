@@ -1,6 +1,10 @@
 # /// script
 # requires-python = ">=3.10,<3.14"
-# dependencies = ["parakeet-mlx==0.5.2", "mlx-whisper==0.4.3", "numpy>=1.26"]
+# dependencies = [
+#     "parakeet-mlx==0.5.2; sys_platform == 'darwin' and platform_machine == 'arm64'",
+#     "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
+#     "numpy>=1.26; sys_platform == 'darwin' and platform_machine == 'arm64'",
+# ]
 # [tool.uv]
 # override-dependencies = ["torch; sys_platform == 'never'"]
 # ///

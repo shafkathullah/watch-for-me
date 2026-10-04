@@ -27,7 +27,7 @@ Load only when a run reports errors or warnings. Write **one line per affected v
 |---|---|---|
 | 0 | all inputs done | answer |
 | 2 | usage error | show the stderr line; fix the flags |
-| 3 | ffmpeg, ffprobe or uv missing | show `doctor` hints (e.g. `brew install ffmpeg`, `curl -LsSf https://astral.sh/uv/install.sh \| sh`) |
+| 3 | ffmpeg, ffprobe or uv missing | show `doctor` hints (e.g. `brew install ffmpeg`, the uv install docs link); the user installs them, never the agent |
 | 4 | some videos failed | answer the rest, one line per failure |
 | 5 | all videos failed | one line per failure, no answer |
 | 6 | `wait` timed out, run still alive | not a failure: give one progress line and wait again |

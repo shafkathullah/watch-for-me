@@ -68,7 +68,7 @@ Up to 10 links at once. Speech is transcribed on this device.
 ## 3. Preflight (first use in a session only)
 
 `W doctor --quick --brief`
-- Exit 3: show the `hint` of every `failed` entry with `blocking: true` (for example `brew install ffmpeg`, `curl -LsSf https://astral.sh/uv/install.sh | sh`) and stop.
+- Exit 3: show the `hint` of every `failed` entry with `blocking: true` (for example `brew install ffmpeg`, the uv install docs link) and stop. Never run an install command yourself: the user installs missing tools.
 - `models_missing` contains `parakeet` or `lid`: tell the user once, "First run downloads ~2 GB (speech models + runtime), ~3.5 GB if the video isn't in English; later runs start in seconds."
 
 ## 4. Start the run

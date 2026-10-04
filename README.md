@@ -85,7 +85,7 @@ The only network calls are yt-dlp downloading the video and the one-time model d
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- [uv](https://docs.astral.sh/uv/getting-started/installation/): `brew install uv`, or follow the uv install docs
 - ffmpeg 5.1 or newer (older works with a fallback): `brew install ffmpeg`, `sudo apt install ffmpeg`, or `winget install ffmpeg`
 - macOS on Apple Silicon (macOS 14+) for the fast path. Intel Macs and Linux use the CPU path. Windows may work on the CPU path but is untested.
 - Free disk: 5 GB for the first run.
