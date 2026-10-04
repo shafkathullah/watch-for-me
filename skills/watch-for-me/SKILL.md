@@ -5,12 +5,12 @@ license: MIT
 compatibility: Needs uv and ffmpeg. Fastest on Apple Silicon (MLX); CPU fallback elsewhere.
 argument-hint: "<url|file>... [--tldr|--eli5|--steps|--code|--quotes] [--ask \"question\"] [--save] [--hires] [--lang xx] [--from t --to t]"
 allowed-tools:
-  - Bash(uv run --script *watch.py*)
+  - Bash(uv run --script '${CLAUDE_SKILL_DIR}/scripts/watch.py' *)
   - Read
   - Write
   - Agent
 metadata:
-  version: "0.1.2"
+  version: "0.1.3"
 ---
 
 # watch-for-me

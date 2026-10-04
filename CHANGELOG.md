@@ -2,10 +2,18 @@
 
 All notable changes to watch-for-me. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.3] - 2026-10-04
+
+### Changed
+- The skill now pre-approves only its own script (`uv run --script '<skill dir>/scripts/watch.py' ...`) instead of any `uv run --script ... watch.py` command.
+
+### Added
+- Plugin icon.
+
 ## [0.1.2] - 2026-10-04
 
 ### Changed
-- The missing-uv hint points at `brew install uv` / the uv install docs instead of a `curl | sh` line, and the skill tells the agent never to run installers.
+- The missing-uv hint points at `brew install uv` / the uv install docs instead of a piped shell installer, and the skill tells the agent never to run installers.
 - `asr_mlx.py.lock` is limited to macOS arm64 (283 KB to 86 KB).
 
 ### Added
