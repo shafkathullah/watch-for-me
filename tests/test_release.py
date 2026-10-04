@@ -151,7 +151,7 @@ def test_allowed_tools_are_narrowed() -> None:
     assert "Bash(uv run *)" not in tools
     bash = [t for t in tools if t.startswith("Bash(")]
     assert bash == ["Bash(uv run --script '${CLAUDE_SKILL_DIR}/scripts/watch.py' *)"]
-    assert set(tools) == {"Bash(uv run --script *watch.py*)", "Read", "Write", "Agent"}
+    assert set(tools) == set(bash) | {"Read", "Write", "Agent"}
 
 
 def test_body_length() -> None:
