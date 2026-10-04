@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Please report security issues privately through GitHub: **Security > Report a vulnerability** on this repository ([private vulnerability reporting](https://github.com/shafkathullah/watch-for-me/security/advisories/new)). Do not open a public issue for them.
+Please report security issues privately through GitHub: **Security > Report a vulnerability** on this repository ([private vulnerability reporting](https://github.com/usedeepmark/watch-for-me/security/advisories/new)). Do not open a public issue for them.
 
 You can expect a first reply within 3 days. Fixes ship as a new release, credited to you unless you prefer otherwise.
 

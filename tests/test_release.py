@@ -87,7 +87,7 @@ def test_claude_plugin_manifest() -> None:
     assert p["name"] == "watch-for-me"
     assert p["author"] == {"name": "Deepmark", "url": "https://usedeepmark.com"}
     assert p["license"] == "MIT"
-    assert p["repository"] == "https://github.com/shafkathullah/watch-for-me"
+    assert p["repository"] == "https://github.com/usedeepmark/watch-for-me"
     assert not set(FORBIDDEN_PLUGIN_FIELDS) & set(p), "invented manifest fields"
     assert "skills" not in p, "skills are auto-discovered from skills/"
 
@@ -115,7 +115,7 @@ def test_codex_manifests() -> None:
     a = _json(".agents/plugins/marketplace.json")
     [entry] = a["plugins"]
     assert entry["name"] == "watch-for-me"
-    assert entry["source"] == {"source": "url", "url": "https://github.com/shafkathullah/watch-for-me.git",
+    assert entry["source"] == {"source": "url", "url": "https://github.com/usedeepmark/watch-for-me.git",
                                "ref": "main"}
 
 

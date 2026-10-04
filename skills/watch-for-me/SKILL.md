@@ -10,7 +10,7 @@ allowed-tools:
   - Write
   - Agent
 metadata:
-  version: "0.1.3"
+  version: "0.1.4"
 ---
 
 # watch-for-me

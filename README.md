@@ -12,9 +12,9 @@ Guide: [usedeepmark.com/can-claude-watch-videos](https://usedeepmark.com/can-cla
 
 | Host | Command |
 |---|---|
-| Claude Code | `/plugin marketplace add shafkathullah/watch-for-me` then `/plugin install watch-for-me@watch-for-me`. Invoke as `/watch-for-me` (autocomplete may show `/watch-for-me:watch-for-me`) |
-| Any Agent Skills host | `npx skills add shafkathullah/watch-for-me -g --skill watch-for-me` |
-| Codex | `codex plugin marketplace add shafkathullah/watch-for-me` then `codex plugin add watch-for-me@watch-for-me` |
+| Claude Code | `/plugin marketplace add usedeepmark/watch-for-me` then `/plugin install watch-for-me@watch-for-me`. Invoke as `/watch-for-me` (autocomplete may show `/watch-for-me:watch-for-me`) |
+| Any Agent Skills host | `npx skills add usedeepmark/watch-for-me -g --skill watch-for-me` |
+| Codex | `codex plugin marketplace add usedeepmark/watch-for-me` then `codex plugin add watch-for-me@watch-for-me` |
 | Manual | clone this repo, copy `skills/watch-for-me/` to `~/.claude/skills/watch-for-me/` |
 
 You also need [uv](https://docs.astral.sh/uv/) and ffmpeg (see [Requirements](#requirements)).

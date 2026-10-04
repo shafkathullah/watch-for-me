@@ -2,6 +2,11 @@
 
 All notable changes to watch-for-me. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.4] - 2026-10-04
+
+### Changed
+- The repository moved to [usedeepmark/watch-for-me](https://github.com/usedeepmark/watch-for-me). The old `shafkathullah/watch-for-me` path redirects; install commands now use the new one.
+
 ## [0.1.3] - 2026-10-04
 
 ### Changed
