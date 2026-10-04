@@ -2,6 +2,16 @@
 
 All notable changes to watch-for-me. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.2.0] - 2026-10-04
+
+### Added
+- `--code` now handles code that scrolls or grows across several keyframes. Readers record the file name and visible line numbers of each code frame, fetch a few extra frames when two frames of the same file don't connect, and a stitcher in the CLI merges the blocks into files. Lines the video never showed become a visible `[gap: lines N-M not shown in the video]` comment instead of being guessed.
+- When the video's description links a GitHub or GitLab repository, `--code` can fill those gaps from it. A gap is filled only when the lines on both sides match the repo's file exactly, and filled lines are marked with their repo, commit and path. If the repo has changed since the video, the gap stays. `--no-repo` turns this off. The fetch is one read-only archive download with size and time limits; nothing from the repo is run.
+
+### Changed
+- Readers zoom to the exact frame time of each tile (the old "end of span" rule could show a different screen).
+- With `--code`, short videos always use a reader subagent.
+
 ## [0.1.4] - 2026-10-04
 
 ### Changed

@@ -405,6 +405,16 @@ class ViewPaths:
     def visual_md(self) -> Path:
         return self.dir / "visual.md"
 
+    @property
+    def code_md(self) -> Path:
+        """`--code`: the files stitched from visual.md's CODE blocks (codefiles.py)."""
+        return self.dir / "code.md"
+
+    @property
+    def code_blocks_md(self) -> Path:
+        """`--code`: the raw CODE blocks whose bodies visual-put moved out of visual.md."""
+        return self.dir / "code-blocks.md"
+
 
 @dataclass(frozen=True)
 class KeyPaths:

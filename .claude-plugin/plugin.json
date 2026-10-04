@@ -1,6 +1,6 @@
 {
   "name": "watch-for-me",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Watch any video for your agent: YouTube, X, Instagram, TikTok or a local file. Speech transcribed on your device, keyframes read by your agent, several videos in parallel.",
   "author": { "name": "Deepmark", "url": "https://usedeepmark.com" },
   "homepage": "https://usedeepmark.com/can-claude-watch-videos",

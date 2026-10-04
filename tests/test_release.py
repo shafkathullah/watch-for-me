@@ -24,7 +24,7 @@ FORBIDDEN_PLUGIN_FIELDS = ("displayName", "defaultEnabled", "userConfig", "exper
                            "permissionMode", "maxTurns")
 USAGE_CARD = """/watch-for-me <link|file>... [mode] [options]
 modes:   (none) summary + timeline · --tldr · --eli5 · --steps · --code · --quotes · --ask "question"
-options: --from 12:00 --to 20:00 · --hires · --lang xx (speech language) · --cookies chrome · --playlist N · --audio-only · --fresh · --setup (prefetch models)
+options: --from 12:00 --to 20:00 · --hires · --lang xx (speech language) · --cookies chrome · --playlist N · --audio-only · --no-repo · --fresh · --setup (prefetch models)
 --save   also save the link to your Deepmark library (needs the Deepmark connector)
 Up to 10 links at once. Speech is transcribed on this device."""
 CONNECT_HINT = ("Deepmark isn't connected, so nothing was saved. To enable `--save`: "

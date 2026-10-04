@@ -1,0 +1,33 @@
+# Ledger service settings
+
+[service]
+name = "ledger-api"
+port = 8472
+workers = 6
+log_level = "warning"
+request_timeout_s = 12.5
+
+[storage]
+path = "/var/lib/ledger/book.json"
+backup_dir = "/var/backups/ledger"
+keep_backups = 14
+fsync = true
+
+[reorder]
+low_stock_ratio = 0.35
+max_batch_units = 480
+check_every_minutes = 45
+notify = ["purchasing@plant7.example", "ops@plant7.example"]
+
+[suppliers.local]
+lead_time_days = 3
+currency = "EUR"
+
+[suppliers.regional]
+lead_time_days = 9
+currency = "EUR"
+
+[suppliers.overseas]
+lead_time_days = 41
+currency = "USD"
+customs_buffer_days = 6

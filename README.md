@@ -51,7 +51,8 @@ Or just talk to your agent: "watch this and tell me the steps", "what does she s
 | `--tldr` | 1 to 3 sentences + 3 key timestamps (light visuals, fastest) |
 | `--eli5` | Plain-words explanation, 150 words or fewer |
 | `--steps` | "You'll need" list + numbered checklist with timestamps |
-| `--code` | Transcribes on-screen code from full-resolution frames into `./watch-for-me/<video>/` files |
+| `--code` | Transcribes on-screen code from full-resolution frames into `./watch-for-me/<video>/` files. Code that scrolls is stitched back into one file per file name; lines that never appeared are marked as gaps, or filled from the repo the description links when it matches |
+| `--no-repo` | With `--code`: never download the linked repo, keep the gaps |
 | `--quotes` | 5 to 15 verbatim quotes with timestamps (transcript only, skips frames) |
 | `--ask "question"` | Answers the question with timestamp evidence |
 | `--save` | also save the link to your [Deepmark](https://usedeepmark.com/?ref=watch-for-me) library (needs the Deepmark MCP connection and a Deepmark plan) |
@@ -81,7 +82,7 @@ Everything is cached per video: asking a second question about the same video st
 
 Audio and transcription never leave your device. The frames your agent reads go to your agent's model provider, like anything else you show it. No telemetry.
 
-The only network calls are yt-dlp downloading the video and the one-time model downloads from Hugging Face.
+The only network calls are yt-dlp downloading the video and the one-time model downloads from Hugging Face. One exception, with `--code` only: when the video's description links its source on GitHub or GitLab and the transcribed code has gaps, one commit of that repo is downloaded to fill them (`--no-repo` turns this off).
 
 ## Requirements
 
@@ -130,7 +131,11 @@ Models live in the Hugging Face cache (`~/.cache/huggingface/hub`, or `$HF_HOME`
 
 ## FAQ
 
-**Does it see motion?** watch-for-me sees keyframes, not motion. It catches every slide, scene change and line of code on screen, but it won't judge a golf swing.
+**Does it see motion?** watch-for-me sees keyframes, not motion. It catches slides, scene changes and code on screen (scrolled code is stitched, see below), but it won't judge a golf swing.
+
+**How does `--code` handle code that scrolls?** Each keyframe that shows code is zoomed and transcribed with the file name from the editor tab and the line numbers from the gutter. When two frames of the same file do not connect, the reader fetches frames in between (up to 4 per gap). A script then stitches the pieces: same file name, ordered by line number (or by the lines two frames share when there is no gutter), and where a line changed the later frame wins. Lines that never appeared on screen are not guessed: the file gets a `[gap: lines 41-57 not shown in the video]` comment and the answer lists it.
+
+**What does `--code` take from the linked repo?** Only the lines of a gap, and only when the lines right before and after the gap are the same in the repo file. Those lines are marked with the repo, commit and path they came from. If the repo's version differs from what the video showed, the gap stays and the answer says so. Lines that were on screen always come from the video, and files the video never showed are not copied.
 
 **How many tokens does it use?** Visuals cost about 200 tokens per minute for a slide talk and about 3,000 per minute for fast-cut videos, and most of that is spent in subagents, not your main conversation. A transcript is about 13k tokens per hour of speech. Long transcripts are digested by subagents, so a 1 hour talk costs the main conversation about 13k tokens (2 hours: about 18k).
 
@@ -142,7 +147,7 @@ Models live in the Hugging Face cache (`~/.cache/huggingface/hub`, or `$HF_HOME`
 
 **What does `--save` do?** It also saves the video's link and title to your [Deepmark](https://usedeepmark.com/?ref=watch-for-me) library, where it becomes searchable by what was said and shown. Only the URL and title are sent, never the transcript or frames. It needs the Deepmark MCP connection (`claude mcp add -s user --transport http deepmark https://usedeepmark.com/api/mcp`) and a Deepmark plan. There is no free tier: without a plan the save is refused with a message saying so. Deepmark indexes YouTube and Instagram as video (TikTok video indexing is limited for now); other sites are saved as a page.
 
-**Is it safe to run on untrusted videos?** Everything that comes out of a video (speech, on-screen text, title, description) is treated as data: the skill tells your agent and its subagents never to follow instructions found in it, and the only commands it runs are its own `watch.py` subcommands. The skill pre-approves only `uv run --script …watch.py…` commands, not arbitrary shell. No defense against prompt injection is perfect: review what your agent does when you ask it to act on a video ("watch this and do X").
+**Is it safe to run on untrusted videos?** Everything that comes out of a video (speech, on-screen text, title, description, and the files of a repo it links) is treated as data: the skill tells your agent and its subagents never to follow instructions found in it, and the only commands it runs are its own `watch.py` subcommands. The skill pre-approves only `uv run --script …watch.py…` commands, not arbitrary shell. No defense against prompt injection is perfect: review what your agent does when you ask it to act on a video ("watch this and do X").
 
 **Why does Claude Code ask for permission when I just say "watch this"?** Typing `/watch-for-me …` gives the skill its pre-approved commands. When Claude picks the skill on its own (plain-language requests, "watch this and do X"), Claude Code does not apply the skill's pre-approvals, so you get prompts for its commands and its cache reads and writes. To skip them, add this to `~/.claude/settings.json` (on Linux the cache is `~/.cache/watch-for-me`):
 

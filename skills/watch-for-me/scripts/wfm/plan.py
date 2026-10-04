@@ -11,7 +11,9 @@ plan.json shape (spec 4.6 + skeleton additions marked +):
  "transcript_tokens_est":int|null(+null at frames),"code":bool,
  "views":{key: view_dir}(+),
  "inline_sheets":[{"key","sheets":[abs...]}],
- "visual_batches":[{"id":"V01","key","sheets":[abs...],"tiles":[first_n,last_n],"t0","t1"}],
+ "visual_batches":[{"id":"V01","key","sheets":[abs...],"tiles":[first_n,last_n],"t0","t1",
+                    "times":{"<n>":t of the frame tile n shows},"prev":[n,t]|null (the tile before
+                    this batch, same video)}],
  "transcript_windows":[{"id":"T01","key","file":abs,"t0","t1","words"}](+shape),
  "tasks_dir":abs(+, write_tasks), "light_sheets":[...](+, cli)}
 - V ids are numbered across the whole run (input order, then time); T ids are per
@@ -35,6 +37,7 @@ from typing import Any
 
 import asr_common
 
+from . import codefiles, repos
 from .cache import KeyPaths, ViewPaths, atomic_write_json, atomic_write_text
 from .types import fmt_ts
 
@@ -139,28 +142,36 @@ def window_bounds(t0: float, t1: float, anchors: list[float], *,
 
 
 def visual_batches(key: str, frames_json: dict[str, Any] | None, view_dir: Path,
-                   start_id: int) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """-> (batches, inline_entry). <= INLINE_MAX_SHEETS sheets -> ([], {"key","sheets":[abs]}).
+                   start_id: int, *, code: bool = False) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """-> (batches, inline_entry). <= INLINE_MAX_SHEETS sheets -> ([], {"key","sheets":[abs]}),
+    except with `code`: code is always read by a V reader (zoom, gap recovery, CODE blocks
+    that visual-put stitches), so even one sheet becomes a batch.
     Else consecutive groups of MAX_SHEETS_PER_BATCH sheets -> batch dicts with id
     f"V{start_id + i:02d}", abs sheet paths, tiles [first n, last n], t0 of first tile's
-    segment, t1 of last tile's segment. Zero sheets -> ([], None)."""
+    segment, t1 of last tile's segment, `times` {"<n>": t} = the exact time of the frame each
+    tile shows (a tile's label is its span; the frame can sit anywhere in it) and `prev`
+    [n, t] = the tile just before the batch, or None. Zero sheets -> ([], None)."""
     sheets = (frames_json or {}).get("sheets") or []
     if not sheets:
         return [], None
     paths = [str(Path(view_dir) / sh["file"]) for sh in sheets]
-    if len(sheets) <= INLINE_MAX_SHEETS:
+    if len(sheets) <= INLINE_MAX_SHEETS and not code:
         return [], {"key": key, "sheets": paths}
     by_n = {int(s["n"]): s for s in (frames_json or {}).get("segments") or []}
     batches: list[dict[str, Any]] = []
+    prev: list[Any] | None = None
     for i, lo in enumerate(range(0, len(sheets), MAX_SHEETS_PER_BATCH)):
         group = sheets[lo:lo + MAX_SHEETS_PER_BATCH]
         tiles = [n for sh in group for n in sh.get("tiles") or []]
         first, last = (min(tiles), max(tiles)) if tiles else (None, None)
         t0 = by_n[first]["t0"] if first in by_n else None
         t1 = by_n[last]["t1"] if last in by_n else None
+        times = {str(n): by_n[n]["t"] for n in sorted(tiles) if n in by_n and "t" in by_n[n]}
         batches.append({"id": f"V{start_id + i:02d}", "key": key,
                         "sheets": paths[lo:lo + MAX_SHEETS_PER_BATCH],
-                        "tiles": [first, last], "t0": t0, "t1": t1})
+                        "tiles": [first, last], "t0": t0, "t1": t1, "times": times, "prev": prev})
+        if str(last) in times:
+            prev = [last, times[str(last)]]
     return batches, None
 
 
@@ -178,7 +189,8 @@ def build_plan(run_id: str, stage: str, code: bool, videos: list[dict[str, Any]]
     inline: list[dict[str, Any]] = []
     batches: list[dict[str, Any]] = []
     for v in videos:
-        b, inl = visual_batches(v["key"], v.get("frames_json"), Path(v["view_dir"]), len(batches) + 1)
+        b, inl = visual_batches(v["key"], v.get("frames_json"), Path(v["view_dir"]), len(batches) + 1,
+                                code=bool(code))
         batches += b
         if inl:
             inline.append(inl)
@@ -229,6 +241,7 @@ def render_context_md(meta: dict[str, Any], vtag: str, transcript: dict[str, Any
         view: <vtag> | transcript: <engines, e.g. "parakeet en 58 chunks, whisper fr 2"> | frames: <N> segments, <S> sheets <grid>
         chapters: 00:00 Intro; 11:22 LLM training; ...        (omitted when none)
         description: <first 600 chars, URLs stripped, whitespace collapsed>   (omitted when empty)
+        repos: <repo links of the full description, "; " joined, <= 3>          (omitted when none)
         files: transcript=<abs>, frames.json=<abs>, sheets=<abs dir>
     Missing fields render as "-"; "transcript: none" / "frames: none" when absent.
     paths keys: "transcript", "frames_json", "sheets_dir"."""
@@ -258,6 +271,9 @@ def render_context_md(meta: dict[str, Any], vtag: str, transcript: dict[str, Any
     desc = " ".join(_URL_RE.sub("", str(meta.get("description") or "")).split())
     if desc:
         lines.append("description: " + desc[:DESCRIPTION_CHARS] + ("…" if len(desc) > DESCRIPTION_CHARS else ""))
+    linked = repos.find_repos(str(meta.get("description") or ""))
+    if linked:
+        lines.append("repos: " + "; ".join(r.url for r in linked))
     lines.append("files: " + ", ".join([
         f"transcript={paths.get('transcript') or '-'}",
         f"frames.json={paths.get('frames_json') or '-'}",
@@ -332,12 +348,41 @@ def write_plan(run_dir: Path, plan: dict[str, Any]) -> Path:
 
 def write_visual_md(view: ViewPaths, key: str, flags: str, body: str, version: str) -> Path:
     """`visual-put`: header line + "\\n" + body (stripped, trailing newline) -> views/<vtag>/visual.md.
+    A body with CODE blocks (`--code`) is split: visual.md keeps the block header lines only,
+    code.md gets the files stitched from the blocks (codefiles.stitch) and code-blocks.md the
+    raw blocks; without blocks, stale code files of an earlier run are removed.
     Raises FileNotFoundError when the view dir does not exist (unknown KEY/VTAG)."""
     if not view.dir.is_dir():
         raise FileNotFoundError(str(view.dir))
+    kept, blocks = codefiles.split_visual(body.strip() + "\n")
+    blocks = [b for b in blocks if b.body]
+    if blocks:
+        files = codefiles.stitch(blocks)
+        atomic_write_text(view.code_blocks_md, codefiles.render_blocks_md(blocks))
+        atomic_write_text(view.code_md, codefiles.render_code_md(key, view.vtag, version, files))
+        body = kept
+    else:
+        view.code_md.unlink(missing_ok=True)
+        view.code_blocks_md.unlink(missing_ok=True)
     text = visual_header(key, view.vtag, flags, version) + "\n" + body.strip() + "\n"
     atomic_write_text(view.visual_md, text)
     return view.visual_md
+
+
+def restitch_code_md(view: ViewPaths, key: str, version: str) -> bool:
+    """A reused view: rebuild code.md from code-blocks.md, video lines only. A cached code.md
+    may hold lines an earlier run's `repo-fill` took from the linked repo; this run decides
+    that again (`--no-repo`, another commit). False when the view has no code blocks."""
+    try:
+        raw = view.code_blocks_md.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return view.code_md.is_file()
+    _, blocks = codefiles.split_visual(raw)
+    blocks = [b for b in blocks if b.body]
+    if not blocks:
+        return False
+    atomic_write_text(view.code_md, codefiles.render_code_md(key, view.vtag, version, codefiles.stitch(blocks)))
+    return True
 
 
 # --------------------------------------------------------------------------
@@ -364,7 +409,7 @@ def frame_command(watch_py: Path | str, key: str) -> str:
 
 def build_tasks(p: dict[str, Any], run_dir: Path, watch_py: Path | str) -> dict[str, dict[str, Any]]:
     """{name: task dict} for every V batch, T window and (windowed) M merge in plan p.
-    V: {"role":"V","id","key","sheets","tiles","t0","t1","code","frame","out"}
+    V: {"role":"V","id","key","sheets","tiles","t0","t1","times","prev","code","frame","out"}
     T: {"role":"T","id","key","file","t0","t1","words","out"}
     M: {"role":"M","id":"M","key","context","visual"(abs visual.md or null without frames),
         "digests":[T outs, time order]}

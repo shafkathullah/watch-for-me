@@ -208,6 +208,7 @@ class RunOptions:
     playlist: int | None = None  # N in 1..10, None = refuse playlists
     max_minutes: int = DEFAULT_MAX_MINUTES
     fresh: bool = False
+    no_repo: bool = False  # --no-repo: never fetch the repo the description links
     jobs_net: int = DEFAULT_JOBS_NET
     jobs_cpu: int = 2  # cli sets max(2, cores//2); cpu backend: 1 while an ASR job runs
     quiet: bool = False
@@ -466,6 +467,8 @@ class VideoResult:
     sheets: list[str] = field(default_factory=list)  # abs sheet paths, in order
     visual_md: str | None = None
     visual_cached: bool = False
+    code_md: str | None = None  # stitched --code files of a cached visual.md (codefiles.py)
+    repos: list[str] = field(default_factory=list)  # --code: repo links in the description (repos.py)
     stages: dict[str, str] = field(default_factory=lambda: {s: "pending" for s in VIDEO_STAGES})
 
     def to_dict(self) -> dict[str, Any]:

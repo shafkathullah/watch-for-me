@@ -1,6 +1,6 @@
 """argparse, subcommand dispatch, the `run` pipeline DAG, exit codes, signal handling (spec 3, 4.1).
 
-Subcommands (spec 3 table): run | wait | visual-put | frame | doctor | setup | cache | cancel.
+Subcommands (spec 3 table): run | wait | visual-put | repo-fill | frame | doctor | setup | cache | cancel.
 Only this module prints to stdout (through wfm.progress for `run`/`wait`).
 
 `run` DAG (spec 4.1), implemented in run_pipeline():
@@ -52,7 +52,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import VERSION, cache, frames, ingest, plan, proc, sheets
+from . import VERSION, cache, codefiles, frames, ingest, plan, proc, repos, sheets
 from . import asr_client as asrc
 from .asr_client import AsrWorker
 from .progress import (
@@ -127,10 +127,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     run INPUT... [--run-id ID] [--detach] [--hires] [--code] [--lang CODE] [--from T] [--to T]
         [--audio-only] [--video-only] [--cookies BROWSER] [--playlist N] [--max-minutes M]
-        [--fresh] [--jobs-net N] [--jobs-cpu N] [--quiet]
+        [--fresh] [--no-repo] [--jobs-net N] [--jobs-cpu N] [--quiet]
     wait --run ID --until frames|done [--timeout 540]
     visual-put KEY --view VTAG --flags F [--from PATH]   (body on stdin, or from PATH)
     visual-put --run ID --flags F                        (every key's V parts of that run)
+    repo-fill --run ID                                   (--code: gaps from the description's repo)
     frame KEY --t SECONDS [--crop X,Y,W,H] [--width 1456]
     doctor [--json] [--quick] [--brief]
     setup
@@ -161,6 +162,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--max-minutes", type=int, default=DEFAULT_MAX_MINUTES, metavar="M",
                    help=f"refuse longer videos / ranges (default {DEFAULT_MAX_MINUTES})")
     r.add_argument("--fresh", action="store_true", help="ignore the cache and redo every stage")
+    r.add_argument("--no-repo", action="store_true",
+                   help="--code: never fetch the source repo the video's description links")
     r.add_argument("--jobs-net", type=int, default=DEFAULT_JOBS_NET, metavar="N", help="parallel downloads")
     r.add_argument("--jobs-cpu", type=int, metavar="N", help="parallel ffmpeg/Pillow jobs (default cores/2)")
     r.add_argument("--quiet", action="store_true", help="no WFM lines on stdout (log only)")
@@ -180,6 +183,9 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--from", dest="from_path", metavar="PATH",
                    help="read the timeline from this file instead of stdin (deleted after, when it "
                         "is inside the video's cache dir)")
+
+    rf = sub.add_parser("repo-fill", help="--code: fill gaps from the repo the video's description links")
+    rf.add_argument("--run", required=True, metavar="ID")
 
     f = sub.add_parser("frame", help="full-res frame / crop from the cached video")
     f.add_argument("key")
@@ -260,6 +266,7 @@ def options_from_args(args: argparse.Namespace) -> RunOptions:
         inputs=inputs, run_id=run_id, detach=args.detach, hires=args.hires or args.code, code=args.code,
         lang=lang, from_s=from_s, to_s=to_s, audio_only=args.audio_only, video_only=args.video_only,
         cookies=cookies, playlist=args.playlist, max_minutes=args.max_minutes, fresh=args.fresh,
+        no_repo=args.no_repo,
         jobs_net=args.jobs_net, jobs_cpu=args.jobs_cpu or _default_jobs_cpu(), quiet=args.quiet,
         backend=backend,  # type: ignore[arg-type]
     )
@@ -282,6 +289,7 @@ def main(argv: list[str]) -> int:
             args = parser.parse_args(argv)
         handler = {
             "run": cmd_run, "wait": cmd_wait, "visual-put": cmd_visual_put, "frame": cmd_frame,
+            "repo-fill": cmd_repo_fill,
             "doctor": cmd_doctor, "setup": cmd_setup, "cache": cmd_cache, "cancel": cmd_cancel,
         }[args.cmd]
         return handler(args)
@@ -764,6 +772,8 @@ async def _process_one(i: int, inp: str, rs: _Run, net: asyncio.Semaphore, cpu: 
     rs.resolved[i] = True
     for item, v in jobs:
         _fill_meta(v, item)
+        if rs.opts.code and not rs.opts.no_repo and not item.is_local:
+            v.repos = [r.url for r in repos.find_repos(str(item.meta.get("description") or ""))]
         kv: dict[str, Any] = {}
         if isinstance(item.meta.get("duration"), (int, float)):
             kv["dur"] = round(float(item.meta["duration"]))
@@ -1060,7 +1070,9 @@ class _VideoJob:
                 return
         # New tiles renumber the segments: a stored visual.md (#n = old tiles) no longer matches.
         self.view.visual_md.unlink(missing_ok=True)
-        self.v.visual_md, self.v.visual_cached = None, False
+        self.view.code_md.unlink(missing_ok=True)
+        self.view.code_blocks_md.unlink(missing_ok=True)
+        self.v.visual_md, self.v.visual_cached, self.v.code_md = None, False, None
         self.stage("frames", "running")
         cache.set_stage(self.man, stage, "running", params_hash=ph)
         self.save()
@@ -1130,6 +1142,8 @@ class _VideoJob:
         if self.view.visual_md.is_file() and not self.opts.fresh:
             v.visual_md = str(self.view.visual_md)
             v.visual_cached = True
+            if plan.restitch_code_md(self.view, v.key or "", VERSION):
+                v.code_md = str(self.view.code_md)
         has_video = self.meta.get("has_video") is not False
         mp = ingest.media_plan(self.item.split_formats, self.opts, has_video=has_video)
         if self.item.is_local:
@@ -1220,7 +1234,7 @@ def _render_sheets(out: Any, view_dir: Path, hires: bool, chapters: Any) -> tupl
 # wait / cancel
 # --------------------------------------------------------------------------
 WAIT_VIDEO_FIELDS = ("input", "key", "status", "error", "warnings", "title", "uploader", "duration",
-                     "view_dir", "context_md", "transcript_md", "visual_md", "visual_cached")
+                     "view_dir", "context_md", "transcript_md", "visual_md", "visual_cached", "code_md", "repos")
 
 
 def cmd_wait(args: argparse.Namespace) -> int:
@@ -1433,14 +1447,22 @@ def cmd_visual_put(args: argparse.Namespace) -> int:
     if src is not None and src.resolve().is_relative_to(kp.dir.resolve()) and src.resolve() != path.resolve():
         src.unlink(missing_ok=True)
     print(path, flush=True)
+    _print_code_md(kp.view(args.view))
     return EXIT_OK
+
+
+def _print_code_md(view: cache.ViewPaths) -> None:
+    """`code <path>` when the stored body had CODE blocks (plan.write_visual_md stitched them)."""
+    if view.code_md.is_file():
+        print(f"code {view.code_md}", flush=True)
 
 
 def _visual_put_run(rid: str, flags: str) -> int:
     """`visual-put --run ID --flags F`: per video with V batches in runs/<id>/plan.json, join
     its V parts (runs/<id>/parts/<key>.<Vnn>.md, written by the V readers with their Write
     tool) in time order and store them as that view's visual.md, so the readers' text never
-    passes through the main agent's context twice. One line per video: the visual.md path, or
+    passes through the main agent's context twice. One line per video: the visual.md path
+    (then `code <code.md path>` when the parts held CODE blocks), or
     `missing <key> <name> <part path>...` (that video is not stored; re-run its readers).
     `nothing to store` when the plan has no batches. Exit 0, 4 when any video had missing
     parts, 2 for an unknown run / no plan."""
@@ -1470,7 +1492,82 @@ def _visual_put_run(rid: str, flags: str) -> int:
             code = EXIT_PARTIAL
             continue
         print(path, flush=True)
+        _print_code_md(view)
     return code
+
+
+def cmd_repo_fill(args: argparse.Namespace) -> int:
+    """`repo-fill --run ID` (`--code` only): per video of the run whose description links a
+    repo (github.com / gitlab.com; repos.find_repos on meta.json, so the agent cannot name a
+    URL) and whose stitched code still has gaps: fetch that repo once (repos.fetch: one commit
+    as an archive, https, size / file / time caps, nothing executed), fill the gaps whose
+    surrounding lines match the repo file (codefiles.fill_gaps), rewrite code.md. Lines:
+        repo <key> <url> commit <sha12> files=<n>        | repo <key> <url> error <code>: <msg>
+        filled <key> <file> <lines a-b | N lines> from <repo path>
+        kept <key> <file> <gap>: <why>
+        code <code.md path>
+        nothing <key>: <no gaps | no repo linked | --no-repo | not a --code run | no code>
+    No network call when nothing has a gap. Exit 0; 2 for an unknown run."""
+    rid = args.run
+    if not cache.valid_run_id(rid):
+        raise UsageError("repo-fill: invalid run id")
+    rdir = cache.cache_root() / cache.RUNS_DIR / rid
+    p = cache.read_json(rdir / "plan.json")
+    run = cache.read_json(rdir / "run.json") or {}
+    if not p:
+        _err(f"repo-fill: no plan for run {rid}")
+        return EXIT_USAGE
+    flags = run.get("flags") or {}
+    for key, view_dir in (p.get("views") or {}).items():
+        view = cache.ViewPaths(Path(view_dir), Path(view_dir).name)
+        kp = cache.key_paths(key)
+        meta = cache.read_json(kp.meta, {}) or {}
+        links = [] if meta.get("local_path") else repos.find_repos(str(meta.get("description") or ""))
+        why = ("not a --code run" if not flags.get("code") else "--no-repo" if flags.get("no_repo") else
+               "no code" if not view.code_blocks_md.is_file() else "no repo linked" if not links else "")
+        files: list[codefiles.CodeFile] = []
+        if not why:
+            _, blocks = codefiles.split_visual(view.code_blocks_md.read_text(encoding="utf-8", errors="replace"))
+            files = codefiles.stitch(blocks)
+            why = "" if any(f.gap_keys() for f in files) else "no gaps"
+        if why:
+            print(f"nothing {key}: {why}", flush=True)
+            continue
+        for link in links:
+            if not any(k not in f.fills for f in files for k in f.gap_keys()):
+                break
+            try:
+                snap = repos.fetch(link, kp.dir, fresh=bool(flags.get("fresh")) and not _repo_fetched_by(rdir, link))
+            except repos.RepoError as e:
+                print(f"repo {key} {link.url} error {e.code}: {e.message}", flush=True)
+                continue
+            (rdir / f"repo.{link.slug}").touch()
+            print(f"repo {key} {link.url} commit {snap.commit[:12]} files={snap.files}"
+                  + (" (truncated)" if snap.truncated else ""), flush=True)
+            tree = snap.dir
+
+            def lookup(name: str, tree: str = tree) -> list[tuple[str, list[str]]]:
+                return [(rel, repos.read_lines(tree, rel)) for rel in repos.find_files(tree, name)]
+
+            codefiles.fill_gaps(files, lookup, f"{link.label}@{snap.commit[:12]}")
+        for f in files:
+            gaps = f.gaps()
+            for k in f.gap_keys():
+                what = (codefiles._span(k, next(b for a, b in gaps if a == k)) if isinstance(gaps, list)
+                        else f"gap {k + 1}")
+                if k in f.fills:
+                    n = len(f.fills[k].lines)
+                    print(f"filled {key} {f.name} {what} ({n} lines) from {f.fills[k].path}", flush=True)
+                else:
+                    print(f"kept {key} {f.name or '?'} {what}: {f.kept.get(k, 'repo not reachable')}", flush=True)
+        cache.atomic_write_text(view.code_md, codefiles.render_code_md(key, view.vtag, VERSION, files))
+        print(f"code {view.code_md}", flush=True)
+    return EXIT_OK
+
+
+def _repo_fetched_by(rdir: Path, link: repos.RepoLink) -> bool:
+    """--fresh refetches a repo once per run, not on every repo-fill call of that run."""
+    return (rdir / f"repo.{link.slug}").exists()
 
 
 def parse_crop(text: str) -> tuple[int, int, int, int]:

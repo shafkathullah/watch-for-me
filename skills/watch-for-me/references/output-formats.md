@@ -67,11 +67,18 @@ Tag a step `(shown only)` or `(said only)` when it appears in one channel only. 
 
 ### --code
 
-1. Write each distinct file to `./watch-for-me/<slug>/NN-<name>.<ext>` in the user's project (`slug` = lowercase title, words joined by `-`, 40 characters or fewer; `NN` = 01, 02 ... in order of appearance).
-2. Each file starts with a comment in the language's syntax: `transcribed from video at mm:ss, <url or file name>; check before running`.
-3. Code comes from the zoomed frames (`CODE#n` blocks), verbatim. Where speech adds a line the screen never showed, add it with a comment `said at mm:ss, not shown`.
-4. The answer lists the files written, then **Gaps**: tiles partly off screen, scrolled code, lines you could not read, versions or dependencies the video assumes.
-5. Do not run the code.
+1. The code is in `code.md` (the `code <path>` line of `visual-put`, or `code_md` of a reused video). The CLI stitched the readers' zoomed-frame blocks into one section per file: `=== NN name | language | first-last shown | lines | gaps | from CODE#n,... ===`, then the file. Same file name = same file; lines ordered by the editor's line numbers, else by the lines consecutive frames share; where a line changed, the later frame wins.
+2. Write each section to `./watch-for-me/<slug>/NN-<name>.<ext>` in the user's project (`slug` = lowercase title, words joined by `-`, 40 characters or fewer; `NN` = the section's number). Copy the section as is, including its gap comments (`[gap: lines 41-57 not shown in the video]`) and `[cut off]` marks. Never fill a gap, repair a line or add one the video did not show.
+   - Name `?`: no file name was on screen. Name it after what the code is. Several `?` sections that are plainly one file in pieces: one file, a gap comment between the pieces.
+   - `(version 2)`: the same file name showed other code under the same line numbers. Write it as its own file.
+   - A file with gap comments whose parts are plainly different programs (fast cuts reusing one file name): one file per part.
+3. Each file starts with a comment in the language's syntax: `transcribed from video at mm:ss, <url or file name>; check before running`.
+4. Where speech adds a line the screen never showed, add it with a comment `said at mm:ss, not shown`.
+5. The answer lists the files written, then **Gaps**: every gap comment with its file and line range, cut-off lines, files without line numbers (their start and end may be off screen), versions or dependencies the video assumes.
+   - `repo-fill` ran: lines it took from the linked repo sit between `[lines ... from repo <repo>@<commit> <path>, not shown in the video]` and `[end of lines from repo]`. Keep both comments. Add one line to the answer: `Filled from <repo url> at commit <commit>: <file> lines a-b, ...`. For each `kept` line, say under Gaps why the gap stayed (for example: the repo's version of the file differs from what the video showed).
+   - The video is the truth for every line it showed. Never replace a shown line with the repo's, never fill a gap yourself from the repo, never copy a repo file the video did not show.
+6. Do not run the code.
+7. No `code.md` (timeline stored by an older version, or no subagents): stitch the `CODE#n` blocks of the visual timeline yourself by the rules in 1 and 2.
 
 ### --quotes
 

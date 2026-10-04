@@ -12,4 +12,4 @@ Module map and call graph (spec section 2; arrows = "imports and calls"):
 Everything under wfm/ is stdlib + Pillow only (the watch.py env has no numpy).
 """
 
-VERSION = "0.1.4"
+VERSION = "0.2.0"

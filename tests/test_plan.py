@@ -74,6 +74,12 @@ def test_visual_batches_inline_and_groups(tmp_path: Path) -> None:
     assert [len(x["sheets"]) for x in b] == [4, 3]
     assert b[0]["tiles"] == [1, 36] and b[1]["tiles"] == [37, 63]
     assert b[0]["t0"] == 0.0 and b[0]["t1"] == 360.0 and b[1]["t1"] == 630.0
+    # exact frame time per tile (a tile's label is a span) + the tile before the batch
+    assert b[0]["times"]["1"] == 9.0 and b[0]["times"]["36"] == 359.0 and len(b[1]["times"]) == 27
+    assert b[0]["prev"] is None and b[1]["prev"] == [36, 359.0]
+    # --code: never inline, a V reader transcribes even one sheet
+    b, inline = plan.visual_batches("k", _frames_json(2), tmp_path, 1, code=True)
+    assert inline is None and [x["id"] for x in b] == ["V01"] and len(b[0]["sheets"]) == 2
 
 
 def test_build_plan_frames_then_done(tmp_path: Path) -> None:
@@ -88,9 +94,12 @@ def test_build_plan_frames_then_done(tmp_path: Path) -> None:
     p = plan.build_plan("wfmx", "frames", True, vids)
     assert p["stage"] == "frames" and p["mode"] is None and p["transcript_tokens_est"] is None
     assert p["code"] is True and p["transcript_windows"] == []
-    assert [x["id"] for x in p["visual_batches"]] == ["V01", "V02", "V03", "V04"]  # numbered across videos
-    assert [x["key"] for x in p["visual_batches"]] == ["a", "a", "c", "c"]
-    assert p["inline_sheets"] == [{"key": "b", "sheets": [str(tmp_path / "b" / "sheets/sheet_001.jpg")]}]
+    assert [x["id"] for x in p["visual_batches"]] == ["V01", "V02", "V03", "V04", "V05"]  # across videos
+    assert [x["key"] for x in p["visual_batches"]] == ["a", "a", "b", "c", "c"]
+    assert p["inline_sheets"] == []  # code: the 1-sheet video goes to a V reader too
+    q = plan.build_plan("wfmx", "frames", False, vids)
+    assert [x["key"] for x in q["visual_batches"]] == ["a", "a", "c", "c"]
+    assert q["inline_sheets"] == [{"key": "b", "sheets": [str(tmp_path / "b" / "sheets/sheet_001.jpg")]}]
     assert p["views"] == {k: str(tmp_path / k) for k in "abcd"}
     d = plan.build_plan("wfmx", "done", False, vids)
     assert d["mode"] == "visual" and d["transcript_tokens_est"] == 12_850  # sum of measured tokens
@@ -238,11 +247,22 @@ def test_visual_put_from_file(wfm_cache: Path, capsys: pytest.CaptureFixture[str
     draft = view.dir / "visual.draft.md"
     draft.write_text(body)
     assert cli.main(["visual-put", "youtube-x", "--view", "full-1080", "--flags", "code", "--from", str(draft)]) == 0
-    assert Path(capsys.readouterr().out.strip()).read_text().endswith(body) and not draft.exists()
+    out = capsys.readouterr().out.split("\n")
+    assert out[1] == f"code {view.code_md}" and not draft.exists()
+    # the block body moves out of visual.md (header line stays) into code.md / code-blocks.md
+    assert Path(out[0]).read_text().endswith("V V01 youtube-x 00:00-01:00\nCODE#1 rust 00:10 zoom=f.jpg\nEND\n")
+    assert view.code_md.read_text().endswith('from CODE#1 ===\nprintln!("{}", x);\n')
+    assert view.code_blocks_md.read_text() == 'CODE#1 rust 00:10 zoom=f.jpg\nprintln!("{}", x);\n'
     outside = tmp_path / "v.md"
     outside.write_text(body)
     assert cli.main(["visual-put", "youtube-x", "--view", "full-1080", "--from", str(outside)]) == 0
     assert outside.exists()
+    capsys.readouterr()
+    # a later store without code blocks removes the stale code files
+    outside.write_text("V V01 youtube-x 00:00-01:00\n#1 00:00-01:00 | slide\nEND\n")
+    assert cli.main(["visual-put", "youtube-x", "--view", "full-1080", "--from", str(outside)]) == 0
+    assert capsys.readouterr().out.strip() == str(view.visual_md)
+    assert not view.code_md.exists() and not view.code_blocks_md.exists()
     assert cli.main(["visual-put", "youtube-x", "--view", "full-1080", "--from", str(tmp_path / "nope.md")]) == 2
     (tmp_path / "empty.md").write_text("\n")
     assert cli.main(["visual-put", "youtube-x", "--view", "full-1080", "--from", str(tmp_path / "empty.md")]) == 2
@@ -362,10 +382,12 @@ def test_visual_put_run_joins_parts(wfm_cache: Path, capsys: pytest.CaptureFixtu
     assert not view.visual_md.exists()
     (rdir / "parts" / "youtube-x.V01.md").write_text(v1)
     assert cli.main(["visual-put", "--run", "wfmput01", "--flags", "code"]) == 0
-    assert Path(capsys.readouterr().out.strip()) == view.visual_md
+    assert capsys.readouterr().out.splitlines() == [str(view.visual_md), f"code {view.code_md}"]
     text = view.visual_md.read_text()
     assert text.splitlines()[0] == f"# visual youtube-x full-720 flags=code skill={__import__('wfm').VERSION}"
-    assert text.endswith(v1 + v2.strip() + "\n")  # time order, verbatim
+    # time order, verbatim, minus the code body (stitched into code.md)
+    assert text.endswith(v1 + "V V02 youtube-x 06:00-10:30\nCODE#40 rust 06:40 zoom=f.jpg\nEND\n")
+    assert 'println!("{}", x);' in view.code_md.read_text()
     # usage errors
     assert cli.main(["visual-put", "--run", "nope0001", "--flags", "x"]) == 2
     assert cli.main(["visual-put", "youtube-x", "--run", "wfmput01"]) == 2

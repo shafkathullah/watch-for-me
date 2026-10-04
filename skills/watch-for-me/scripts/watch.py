@@ -4,7 +4,7 @@
 # ///
 """watch-for-me CLI entry (spec 3).
 
-    uv run --script <SKILL_DIR>/scripts/watch.py <run|wait|visual-put|frame|doctor|setup|cache|cancel> [args]
+    uv run --script <SKILL_DIR>/scripts/watch.py <run|wait|visual-put|repo-fill|frame|doctor|setup|cache|cancel> [args]
 
 Python puts this file's directory first on sys.path, so `wfm/` and
 `asr_common.py` import without packaging. All logic lives in wfm.cli.
