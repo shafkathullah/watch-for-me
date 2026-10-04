@@ -2,6 +2,15 @@
 
 All notable changes to watch-for-me. Versions follow [Semantic Versioning](https://semver.org).
 
+## [0.1.2] - 2026-10-04
+
+### Changed
+- The missing-uv hint points at `brew install uv` / the uv install docs instead of a `curl | sh` line, and the skill tells the agent never to run installers.
+- `asr_mlx.py.lock` is limited to macOS arm64 (283 KB to 86 KB).
+
+### Added
+- `SECURITY.md`, GitHub Actions pinned to commit SHAs, demo GIF in the README (a real, sped-up Claude Code run).
+
 ## [0.1.1] - 2026-10-02
 
 ### Changed

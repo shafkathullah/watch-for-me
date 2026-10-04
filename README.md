@@ -6,7 +6,7 @@ A free agent skill for Claude Code, Codex and any Agent Skills host. Paste a You
 
 Guide: [usedeepmark.com/can-claude-watch-videos](https://usedeepmark.com/can-claude-watch-videos?ref=watch-for-me)
 
-<!-- demo GIF goes here: docs/demo.gif, 20 s, `/watch-for-me <public talk> --tldr` recorded with vhs or a real screen capture; no personal names, handles or accounts visible -->
+![watch-for-me running --tldr on "Rust in 100 Seconds" in Claude Code](docs/demo.gif)
 
 ## Install
 
